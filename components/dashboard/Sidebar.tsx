@@ -29,7 +29,7 @@ function badgeFor(name: string) {
   return words.length > 1 ? (words[0][0] + words[1][0]).toUpperCase() : name.slice(0, 2).toUpperCase();
 }
 
-type NavItem = { label: string; icon: typeof Bell; href: string | null; badge?: number };
+type NavItem = { label: string; icon: typeof Bell; href: string | null; badge?: number; ownerOnly?: boolean };
 
 const primaryNav: NavItem[] = [
   { label: "Overview", icon: LayoutDashboard, href: "/dashboard" },
@@ -41,19 +41,23 @@ const primaryNav: NavItem[] = [
   { label: "Creatives", icon: ImageIcon, href: null },
   { label: "Reports", icon: FileText, href: "/dashboard/reports" },
   { label: "Alerts", icon: Bell, href: "/dashboard/alerts" },
-  { label: "Users & Access", icon: Users, href: "/dashboard/members" },
-  { label: "Settings", icon: Settings, href: null },
+  { label: "Users & Access", icon: Users, href: "/dashboard/members", ownerOnly: true },
+  { label: "Settings", icon: Settings, href: "/dashboard/settings" },
 ];
 
 export function Sidebar({
   networks,
   unreadAlerts = 0,
+  isOwner = false,
 }: {
   networks: { id: string; name: string; synced: boolean }[];
   unreadAlerts?: number;
+  isOwner?: boolean;
 }) {
   const pathname = usePathname();
-  const nav = primaryNav.map((item) => (item.label === "Alerts" ? { ...item, badge: unreadAlerts || undefined } : item));
+  const nav = primaryNav
+    .filter((item) => !("ownerOnly" in item) || isOwner)
+    .map((item) => (item.label === "Alerts" ? { ...item, badge: unreadAlerts || undefined } : item));
 
   return (
     <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-border bg-surface/60 h-screen sticky top-0">
