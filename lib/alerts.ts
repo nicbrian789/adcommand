@@ -18,13 +18,14 @@ export async function raiseAlert(
   supabase: Supabase,
   params: { workspaceId: string; networkId?: string; type: AlertType; title: string; message: string }
 ) {
-  await supabase.from("alerts").insert({
+  const { error } = await supabase.from("alerts").insert({
     workspace_id: params.workspaceId,
     network_id: params.networkId ?? null,
     type: params.type,
     title: params.title,
     message: params.message,
   });
+  if (error) console.error("Gagal simpan alert ke database:", error.message);
 
   await sendTelegramAlert(`${emojiFor[params.type]} <b>${params.title}</b>\n${params.message}`);
 }
