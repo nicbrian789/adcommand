@@ -66,10 +66,13 @@ export default async function AnalyticsPage({
   const range = resolveDateRange(from, to);
   const supabase = await createClient();
 
-  const { data: networks, error: networksError } = await supabase
-    .from("ad_networks")
-    .select("id, name")
-    .order("name", { ascending: true });
+  const [
+    { data: networks, error: networksError },
+    { data: campaigns },
+  ] = await Promise.all([
+    supabase.from("ad_networks").select("id, name").order("name", { ascending: true }),
+    supabase.from("campaigns").select("id, name, network_id"),
+  ]);
   if (networksError) {
     return (
       <div className="rounded-xl border border-danger/30 bg-danger/10 p-10 text-center text-danger flex flex-col items-center gap-2">
@@ -82,8 +85,6 @@ export default async function AnalyticsPage({
 
   const networkName = new Map((networks ?? []).map((n) => [n.id, n.name]));
   const selectedNetwork = network && networkName.has(network) ? network : null;
-
-  const { data: campaigns } = await supabase.from("campaigns").select("id, name, network_id");
   const visibleCampaigns = (campaigns ?? []).filter((c) => !selectedNetwork || c.network_id === selectedNetwork);
   const campaignIds = visibleCampaigns.map((c) => c.id);
 

@@ -38,19 +38,36 @@ async function getOverview(memberParam: string | undefined, range: { from: strin
   if (workspaceError) return { error: workspaceError.message };
   if (!workspace) return { empty: true as const };
 
-  const { data: myMembership } = await supabase
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", workspace.id)
-    .eq("user_id", user.id)
-    .maybeSingle();
-  const isOwner = myMembership?.role === "Owner";
+  const [
+    { data: myMembership },
+    { data: members, error: membersError },
+    { data: networks, error: networksError },
+    { data: campaigns, error: campaignsError },
+    { data: stats, error: statsError },
+  ] = await Promise.all([
+    supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspace.id)
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase.from("workspace_members").select("user_id").eq("workspace_id", workspace.id),
+    supabase.from("ad_networks").select("id, name, user_id, balance, balance_checked_at").eq("workspace_id", workspace.id),
+    supabase.from("campaigns").select("id, name, network_id").eq("workspace_id", workspace.id),
+    supabase
+      .from("campaign_stats")
+      .select("campaign_id, spend, impressions, clicks, conversions, revenue")
+      .eq("workspace_id", workspace.id)
+      .eq("country", "ALL")
+      .gte("stat_date", range.from)
+      .lte("stat_date", range.to),
+  ]);
 
-  const { data: members, error: membersError } = await supabase
-    .from("workspace_members")
-    .select("user_id")
-    .eq("workspace_id", workspace.id);
+  const isOwner = myMembership?.role === "Owner";
   if (membersError) return { error: membersError.message };
+  if (networksError) return { error: networksError.message };
+  if (campaignsError) return { error: campaignsError.message };
+  if (statsError) return { error: statsError.message };
 
   const memberIds = (members ?? []).map((m) => m.user_id);
   const { data: profiles } = await supabase
@@ -66,27 +83,6 @@ async function getOverview(memberParam: string | undefined, range: { from: strin
   const selectedMember = isOwner && memberParam && memberParam !== "all" && memberIds.includes(memberParam)
     ? memberParam
     : null;
-
-  const { data: networks, error: networksError } = await supabase
-    .from("ad_networks")
-    .select("id, name, user_id, balance, balance_checked_at")
-    .eq("workspace_id", workspace.id);
-  if (networksError) return { error: networksError.message };
-
-  const { data: campaigns, error: campaignsError } = await supabase
-    .from("campaigns")
-    .select("id, name, network_id")
-    .eq("workspace_id", workspace.id);
-  if (campaignsError) return { error: campaignsError.message };
-
-  const { data: stats, error: statsError } = await supabase
-    .from("campaign_stats")
-    .select("campaign_id, spend, impressions, clicks, conversions, revenue")
-    .eq("workspace_id", workspace.id)
-    .eq("country", "ALL")
-    .gte("stat_date", range.from)
-    .lte("stat_date", range.to);
-  if (statsError) return { error: statsError.message };
 
   const networkMap = new Map((networks ?? []).map((n) => [n.id, n]));
 

@@ -54,37 +54,32 @@ async function getNetworks(): Promise<
     };
   }
 
-  const { data: rawNetworks, error: networksError } = await supabase
-    .from("ad_networks")
-    .select("id, name, provider, enabled, created_at, user_id, credential_ref")
-    .eq("workspace_id", workspace.id)
-    .order("created_at", { ascending: false });
+  const [
+    { data: rawNetworks, error: networksError },
+    { data: campaigns, error: campaignsError },
+    { data: myMembership },
+  ] = await Promise.all([
+    supabase
+      .from("ad_networks")
+      .select("id, name, provider, enabled, created_at, user_id, credential_ref")
+      .eq("workspace_id", workspace.id)
+      .order("created_at", { ascending: false }),
+    supabase.from("campaigns").select("network_id").eq("workspace_id", workspace.id),
+    supabase.from("workspace_members").select("role").eq("workspace_id", workspace.id).eq("user_id", user.id).maybeSingle(),
+  ]);
 
   if (networksError) return { error: networksError.message };
+  if (campaignsError) return { error: campaignsError.message };
 
   const networks: NetworkRow[] = (rawNetworks ?? []).map(({ credential_ref, ...n }) => ({
     ...n,
     hasKey: credential_ref !== null,
   }));
 
-  const { data: campaigns, error: campaignsError } = await supabase
-    .from("campaigns")
-    .select("network_id")
-    .eq("workspace_id", workspace.id);
-
-  if (campaignsError) return { error: campaignsError.message };
-
   const campaignCounts: Record<string, number> = {};
   for (const c of campaigns ?? []) {
     campaignCounts[c.network_id] = (campaignCounts[c.network_id] ?? 0) + 1;
   }
-
-  const { data: myMembership } = await supabase
-    .from("workspace_members")
-    .select("role")
-    .eq("workspace_id", workspace.id)
-    .eq("user_id", user.id)
-    .maybeSingle();
 
   const ownerIds = [...new Set(networks.map((n) => n.user_id))];
   const { data: profiles } = ownerIds.length

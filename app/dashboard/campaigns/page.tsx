@@ -57,30 +57,28 @@ async function getCampaignsData(range: { from: string; to: string }): Promise<
     return { workspaceId: "", workspaceName: "", networks: [], campaigns: [], totals: {} };
   }
 
-  const { data: networks, error: networksError } = await supabase
-    .from("ad_networks")
-    .select("id, name")
-    .eq("workspace_id", workspace.id)
-    .order("name", { ascending: true });
+  const [
+    { data: networks, error: networksError },
+    { data: campaigns, error: campaignsError },
+    { data: stats, error: statsError },
+  ] = await Promise.all([
+    supabase.from("ad_networks").select("id, name").eq("workspace_id", workspace.id).order("name", { ascending: true }),
+    supabase
+      .from("campaigns")
+      .select("id, name, status, created_at, network_id")
+      .eq("workspace_id", workspace.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("campaign_stats")
+      .select("campaign_id, spend, impressions, clicks, conversions, revenue")
+      .eq("workspace_id", workspace.id)
+      .eq("country", "ALL")
+      .gte("stat_date", range.from)
+      .lte("stat_date", range.to),
+  ]);
 
   if (networksError) return { error: networksError.message };
-
-  const { data: campaigns, error: campaignsError } = await supabase
-    .from("campaigns")
-    .select("id, name, status, created_at, network_id")
-    .eq("workspace_id", workspace.id)
-    .order("created_at", { ascending: false });
-
   if (campaignsError) return { error: campaignsError.message };
-
-  const { data: stats, error: statsError } = await supabase
-    .from("campaign_stats")
-    .select("campaign_id, spend, impressions, clicks, conversions, revenue")
-    .eq("workspace_id", workspace.id)
-    .eq("country", "ALL")
-    .gte("stat_date", range.from)
-    .lte("stat_date", range.to);
-
   if (statsError) return { error: statsError.message };
 
   const totals: Record<string, CampaignTotals> = {};

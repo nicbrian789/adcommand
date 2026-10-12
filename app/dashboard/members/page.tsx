@@ -24,34 +24,26 @@ async function getMembers(): Promise<
 > {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: workspace, error: workspaceError } = await supabase
-    .from("workspaces")
-    .select("id, name")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  const [
+    {
+      data: { user },
+    },
+    { data: workspace, error: workspaceError },
+  ] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from("workspaces").select("id, name").order("created_at", { ascending: true }).limit(1).maybeSingle(),
+  ]);
 
   if (workspaceError) return { error: workspaceError.message };
   if (!workspace) return { workspaceName: "", members: [], isOwner: false };
 
-  const { data: myMembership } = user
-    ? await supabase
-        .from("workspace_members")
-        .select("role")
-        .eq("workspace_id", workspace.id)
-        .eq("user_id", user.id)
-        .maybeSingle()
-    : { data: null };
+  const [{ data: myMembership }, { data: members, error: membersError }] = await Promise.all([
+    user
+      ? supabase.from("workspace_members").select("role").eq("workspace_id", workspace.id).eq("user_id", user.id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase.from("workspace_members").select("user_id, role, created_at").eq("workspace_id", workspace.id),
+  ]);
   const isOwner = myMembership?.role === "Owner";
-
-  const { data: members, error: membersError } = await supabase
-    .from("workspace_members")
-    .select("user_id, role, created_at")
-    .eq("workspace_id", workspace.id);
 
   if (membersError) return { error: membersError.message };
   if (!members || members.length === 0) return { workspaceName: workspace.name, members: [], isOwner };

@@ -38,18 +38,16 @@ export default async function NetworkDetailPage({
   const range = resolveDateRange(from, to);
   const supabase = await createClient();
 
-  const { data: network } = await supabase
-    .from("ad_networks")
-    .select("id, name, provider, enabled, balance, balance_checked_at")
-    .eq("id", id)
-    .maybeSingle();
+  const [{ data: network }, { data: campaigns }] = await Promise.all([
+    supabase
+      .from("ad_networks")
+      .select("id, name, provider, enabled, balance, balance_checked_at")
+      .eq("id", id)
+      .maybeSingle(),
+    supabase.from("campaigns").select("id, name, status").eq("network_id", id),
+  ]);
 
   if (!network) notFound();
-
-  const { data: campaigns } = await supabase
-    .from("campaigns")
-    .select("id, name, status")
-    .eq("network_id", id);
 
   const campaignIds = (campaigns ?? []).map((c) => c.id);
 
