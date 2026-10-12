@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { InviteMemberForm } from "@/components/dashboard/InviteMemberForm";
 import { RemoveMemberButton } from "@/components/dashboard/RemoveMemberButton";
+import { SeedNetworksButton } from "@/components/dashboard/SeedNetworksButton";
 import { Users, AlertTriangle } from "lucide-react";
 
 type MemberRow = {
@@ -150,9 +151,12 @@ export default async function MembersPage() {
                   </td>
                   {isOwner ? (
                     <td className="px-4 py-3">
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-2">
                         {m.role !== "Owner" ? (
-                          <RemoveMemberButton userId={m.user_id} name={m.full_name || m.email} />
+                          <>
+                            <SeedNetworksButton userId={m.user_id} />
+                            <RemoveMemberButton userId={m.user_id} name={m.full_name || m.email} />
+                          </>
                         ) : null}
                       </div>
                     </td>

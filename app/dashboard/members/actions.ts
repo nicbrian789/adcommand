@@ -5,6 +5,24 @@ import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NETWORK_TYPES } from "@/lib/networks";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+async function seedDefaultNetworks(admin: SupabaseClient, workspaceId: string, userId: string) {
+  const { data: existing } = await admin.from("ad_networks").select("provider").eq("user_id", userId);
+  const existingProviders = new Set((existing ?? []).map((n) => n.provider));
+
+  const missing = NETWORK_TYPES.filter((t) => t.value !== "other" && !existingProviders.has(t.value)).map((t) => ({
+    workspace_id: workspaceId,
+    user_id: userId,
+    name: t.label,
+    provider: t.value,
+    enabled: true,
+  }));
+
+  if (missing.length === 0) return 0;
+  await admin.from("ad_networks").insert(missing);
+  return missing.length;
+}
 
 export async function inviteMember(email: string, fullName: string) {
   const supabase = await createClient();
@@ -45,18 +63,43 @@ export async function inviteMember(email: string, fullName: string) {
 
   const newUserId = inviteData.user?.id;
   if (newUserId) {
-    const defaultNetworks = NETWORK_TYPES.filter((t) => t.value !== "other").map((t) => ({
-      workspace_id: workspace.id,
-      user_id: newUserId,
-      name: t.label,
-      provider: t.value,
-      enabled: true,
-    }));
-    await admin.from("ad_networks").insert(defaultNetworks);
+    await seedDefaultNetworks(admin, workspace.id, newUserId);
   }
 
   revalidatePath("/dashboard/members");
   revalidatePath("/dashboard/networks");
+}
+
+export async function addDefaultNetworksForMember(targetUserId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sesi kamu sudah habis. Silakan masuk lagi.");
+
+  const { data: workspace } = await supabase
+    .from("workspaces")
+    .select("id")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!workspace) throw new Error("Belum ada workspace.");
+
+  const { data: membership } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspace.id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (membership?.role !== "Owner") throw new Error("Cuma Owner yang bisa lakuin ini.");
+
+  const admin = createAdminClient();
+  const added = await seedDefaultNetworks(admin, workspace.id, targetUserId);
+
+  revalidatePath("/dashboard/networks");
+  revalidatePath("/dashboard/members");
+
+  return { added };
 }
 
 export async function removeMember(targetUserId: string) {
