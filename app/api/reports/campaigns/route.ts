@@ -22,6 +22,16 @@ export async function GET(request: NextRequest) {
 
   if (!workspace) return NextResponse.json({ error: "Belum ada workspace." }, { status: 404 });
 
+  const { data: myMembership } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspace.id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const isOwner = myMembership?.role === "Owner";
+
+  const memberFilter = isOwner ? params.get("member") : null;
+
   const [
     { data: networks },
     { data: campaigns, error: campaignsError },
@@ -50,6 +60,10 @@ export async function GET(request: NextRequest) {
     : { data: [] };
   const ownerName = new Map((profiles ?? []).map((p) => [p.id, p.full_name || p.email || "(tanpa nama)"]));
 
+  const visibleCampaigns = memberFilter
+    ? (campaigns ?? []).filter((c) => networkOwner.get(c.network_id) === memberFilter)
+    : campaigns ?? [];
+
   type Totals = { spend: number; impressions: number; clicks: number; conversions: number; revenue: number };
   const totals = new Map<string, Totals>();
   for (const s of stats ?? []) {
@@ -62,7 +76,7 @@ export async function GET(request: NextRequest) {
     totals.set(s.campaign_id, t);
   }
 
-  const rows = (campaigns ?? [])
+  const rows = visibleCampaigns
     .map((c) => {
       const t = totals.get(c.id) ?? { spend: 0, impressions: 0, clicks: 0, conversions: 0, revenue: 0 };
       const ctr = t.impressions > 0 ? (t.clicks / t.impressions) * 100 : 0;
@@ -88,6 +102,14 @@ export async function GET(request: NextRequest) {
     ["Network", "Pemilik", "Campaign", "Status", "Spend", "Impressions", "Klik", "CTR", "Konversi", "Revenue", "ROAS"],
     rows
   );
+
+  await supabase.from("report_exports").insert({
+    workspace_id: workspace.id,
+    user_id: user.id,
+    date_from: range.from,
+    date_to: range.to,
+    member_filter: memberFilter,
+  });
 
   return new NextResponse(`﻿${csv}`, {
     headers: {
