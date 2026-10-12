@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
   const { data: networks, error } = await supabase
     .from("ad_networks")
-    .select("id, name, provider, workspace_id, enabled, credential_ref")
+    .select("id, name, provider, workspace_id, enabled, credential_ref, user_id")
     .eq("enabled", true)
     .not("credential_ref", "is", null);
 

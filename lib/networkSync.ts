@@ -514,6 +514,7 @@ async function syncTrafficFactory(supabase: Supabase, network: { id: string; wor
 async function checkCampaignHealth(
   supabase: Supabase,
   network: { id: string; name: string; workspace_id: string },
+  ownerLabel: string,
   campaignIds: string[]
 ) {
   if (campaignIds.length === 0) return;
@@ -552,7 +553,7 @@ async function checkCampaignHealth(
       const avgCtr = priorWithImpressions.reduce((sum, p) => sum + p.clicks / p.impressions, 0) / priorWithImpressions.length;
       const latestCtr = latest.clicks / latest.impressions;
       if (avgCtr > 0 && latestCtr < avgCtr * CTR_DROP_RATIO) {
-        const title = `CTR anjlok: ${name}`;
+        const title = `[${ownerLabel}] CTR anjlok: ${name}`;
         if (!(await hasRecentAlert(supabase, { networkId: network.id, type: "ctr_drop", title, cooldownMs: ALERT_COOLDOWN_MS }))) {
           await raiseAlert(supabase, {
             workspaceId: network.workspace_id,
@@ -569,7 +570,7 @@ async function checkCampaignHealth(
     const earlierHadActivity = rows.slice(0, -3).some((r) => r.spend > 0 || r.clicks > 0);
     const last3Flat = last3.length === 3 && last3.every((r) => r.spend === 0 && r.clicks === 0);
     if (last3Flat && earlierHadActivity && statusOf.get(campaignId) === "Running") {
-      const title = `Tidak ada aktivitas: ${name}`;
+      const title = `[${ownerLabel}] Tidak ada aktivitas: ${name}`;
       if (!(await hasRecentAlert(supabase, { networkId: network.id, type: "no_activity", title, cooldownMs: ALERT_COOLDOWN_MS }))) {
         await raiseAlert(supabase, {
           workspaceId: network.workspace_id,
@@ -583,7 +584,7 @@ async function checkCampaignHealth(
   }
 }
 
-export type NetworkRef = { id: string; name: string; workspace_id: string; provider: string | null };
+export type NetworkRef = { id: string; name: string; workspace_id: string; provider: string | null; user_id: string };
 
 /** Jalanin sync + semua pengecekan alert buat 1 network. Dipakai baik dari tombol Sync manual maupun cron otomatis. */
 export async function runNetworkSync(
@@ -591,6 +592,13 @@ export async function runNetworkSync(
   network: NetworkRef,
   apiKey: string
 ): Promise<{ campaigns: number; days: number }> {
+  const { data: ownerProfile } = await supabase
+    .from("profiles")
+    .select("full_name, email")
+    .eq("id", network.user_id)
+    .maybeSingle();
+  const ownerLabel = ownerProfile?.full_name || ownerProfile?.email || "tanpa nama";
+
   const { data: beforeCampaigns } = await supabase.from("campaigns").select("id").eq("network_id", network.id);
   const beforeIds = new Set((beforeCampaigns ?? []).map((c) => c.id));
 
@@ -612,8 +620,8 @@ export async function runNetworkSync(
       workspaceId: network.workspace_id,
       networkId: network.id,
       type: "sync_failed",
-      title: `Sync gagal: ${network.name}`,
-      message: `Network ${networkTypeLabel(network.provider)} "${network.name}" gagal sinkron. Alasan: ${reason}`,
+      title: `[${ownerLabel}] Sync gagal: ${network.name}`,
+      message: `Network ${networkTypeLabel(network.provider)} "${network.name}" (punya ${ownerLabel}) gagal sinkron. Alasan: ${reason}`,
     });
     throw err;
   }
@@ -632,8 +640,8 @@ export async function runNetworkSync(
         workspaceId: network.workspace_id,
         networkId: network.id,
         type: "low_balance",
-        title: `Saldo rendah: ${network.name}`,
-        message: `Saldo network ${networkTypeLabel(network.provider)} "${network.name}" tinggal $${refreshed.balance.toFixed(2)}.`,
+        title: `[${ownerLabel}] Saldo rendah: ${network.name}`,
+        message: `Saldo network ${networkTypeLabel(network.provider)} "${network.name}" (punya ${ownerLabel}) tinggal $${refreshed.balance.toFixed(2)}.`,
       });
     }
   }
@@ -645,12 +653,12 @@ export async function runNetworkSync(
       workspaceId: network.workspace_id,
       networkId: network.id,
       type: "new_campaign",
-      title: `${newCampaigns.length} campaign baru: ${network.name}`,
-      message: `Campaign baru terdeteksi di ${network.name}: ${newCampaigns.map((c) => c.name).join(", ")}.`,
+      title: `[${ownerLabel}] ${newCampaigns.length} campaign baru: ${network.name}`,
+      message: `Campaign baru terdeteksi di ${network.name} (punya ${ownerLabel}): ${newCampaigns.map((c) => c.name).join(", ")}.`,
     });
   }
 
-  await checkCampaignHealth(supabase, network, (afterCampaigns ?? []).map((c) => c.id));
+  await checkCampaignHealth(supabase, network, ownerLabel, (afterCampaigns ?? []).map((c) => c.id));
 
   return result;
 }

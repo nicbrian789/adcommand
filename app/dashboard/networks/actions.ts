@@ -15,7 +15,7 @@ export async function syncNetwork(networkId: string): Promise<{ campaigns: numbe
 
   const { data: network, error: networkError } = await supabase
     .from("ad_networks")
-    .select("id, name, workspace_id, provider")
+    .select("id, name, workspace_id, provider, user_id")
     .eq("id", networkId)
     .maybeSingle();
 

@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
   const { data: networks, error } = await supabase
     .from("ad_networks")
-    .select("id, name, provider, workspace_id, enabled, credential_ref, last_synced_at, created_at")
+    .select("id, name, provider, workspace_id, enabled, credential_ref, last_synced_at, created_at, user_id")
     .eq("enabled", true)
     .not("credential_ref", "is", null);
 
@@ -44,12 +44,19 @@ export async function GET(request: NextRequest) {
 
     if (recentAlert) continue;
 
+    const { data: ownerProfile } = await supabase
+      .from("profiles")
+      .select("full_name, email")
+      .eq("id", n.user_id)
+      .maybeSingle();
+    const ownerLabel = ownerProfile?.full_name || ownerProfile?.email || "tanpa nama";
+
     await raiseAlert(supabase, {
       workspaceId: n.workspace_id,
       networkId: n.id,
       type: "stale_sync",
-      title: `Belum di-sync: ${n.name}`,
-      message: `Network ${networkTypeLabel(n.provider)} "${n.name}" belum di-sync lebih dari ${STALE_DAYS} hari. Minta anggota tim yang pegang network ini buat klik Sync.`,
+      title: `[${ownerLabel}] Belum di-sync: ${n.name}`,
+      message: `Network ${networkTypeLabel(n.provider)} "${n.name}" (punya ${ownerLabel}) belum di-sync lebih dari ${STALE_DAYS} hari. Minta ${ownerLabel} buat klik Sync.`,
     });
     alerted += 1;
   }
