@@ -39,7 +39,7 @@ const primaryNav: NavItem[] = [
   { label: "GEO / Countries", icon: MapPin, href: "/dashboard/geo" },
   { label: "Websites / Landing", icon: Globe, href: "/dashboard/websites" },
   { label: "Creatives", icon: ImageIcon, href: null },
-  { label: "Reports", icon: FileText, href: null },
+  { label: "Reports", icon: FileText, href: "/dashboard/reports" },
   { label: "Alerts", icon: Bell, href: "/dashboard/alerts" },
   { label: "Users & Access", icon: Users, href: "/dashboard/members" },
   { label: "Settings", icon: Settings, href: null },
