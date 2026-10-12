@@ -27,25 +27,29 @@ export async function GET(request: NextRequest) {
 
   const eligible = (networks ?? []).filter((n) => isSyncSupported(n.provider));
 
-  let synced = 0;
-  let failed = 0;
-  const details: { network: string; status: "ok" | "error"; message?: string }[] = [];
+  const results = await Promise.all(
+    eligible.map(async (n) => {
+      try {
+        const { data: apiKey, error: keyError } = await supabase.rpc("get_network_api_key_admin", {
+          p_network_id: n.id,
+        });
+        if (keyError || !apiKey) throw new Error(keyError?.message ?? "API key tidak ditemukan.");
 
-  for (const n of eligible) {
-    try {
-      const { data: apiKey, error: keyError } = await supabase.rpc("get_network_api_key_admin", {
-        p_network_id: n.id,
-      });
-      if (keyError || !apiKey) throw new Error(keyError?.message ?? "API key tidak ditemukan.");
+        await runNetworkSync(supabase, n, apiKey);
+        return { network: n.name, status: "ok" as const };
+      } catch (err) {
+        return {
+          network: n.name,
+          status: "error" as const,
+          message: err instanceof Error ? err.message : String(err),
+        };
+      }
+    })
+  );
 
-      await runNetworkSync(supabase, n, apiKey);
-      synced += 1;
-      details.push({ network: n.name, status: "ok" });
-    } catch (err) {
-      failed += 1;
-      details.push({ network: n.name, status: "error", message: err instanceof Error ? err.message : String(err) });
-    }
-  }
+  const synced = results.filter((r) => r.status === "ok").length;
+  const failed = results.filter((r) => r.status === "error").length;
+  const details = results;
 
   revalidatePath("/dashboard/networks");
   revalidatePath("/dashboard/campaigns");
