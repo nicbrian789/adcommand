@@ -4,6 +4,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isSyncSupported } from "@/lib/networks";
 import { runNetworkSync } from "@/lib/networkSync";
 
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization");
