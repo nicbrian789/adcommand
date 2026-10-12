@@ -553,13 +553,13 @@ async function checkCampaignHealth(
       const avgCtr = priorWithImpressions.reduce((sum, p) => sum + p.clicks / p.impressions, 0) / priorWithImpressions.length;
       const latestCtr = latest.clicks / latest.impressions;
       if (avgCtr > 0 && latestCtr < avgCtr * CTR_DROP_RATIO) {
-        const title = `[${ownerLabel}] CTR anjlok: ${name}`;
-        if (!(await hasRecentAlert(supabase, { networkId: network.id, type: "ctr_drop", title, cooldownMs: ALERT_COOLDOWN_MS }))) {
+        const titleSuffix = `CTR anjlok: ${name}`;
+        if (!(await hasRecentAlert(supabase, { networkId: network.id, type: "ctr_drop", titleSuffix, cooldownMs: ALERT_COOLDOWN_MS }))) {
           await raiseAlert(supabase, {
             workspaceId: network.workspace_id,
             networkId: network.id,
             type: "ctr_drop",
-            title,
+            title: `[${ownerLabel}] ${titleSuffix}`,
             message: `CTR campaign "${name}" di ${network.name} turun dari rata-rata ${(avgCtr * 100).toFixed(2)}% jadi ${(latestCtr * 100).toFixed(2)}% pada ${latest.stat_date}.`,
           });
         }
@@ -570,13 +570,13 @@ async function checkCampaignHealth(
     const earlierHadActivity = rows.slice(0, -3).some((r) => r.spend > 0 || r.clicks > 0);
     const last3Flat = last3.length === 3 && last3.every((r) => r.spend === 0 && r.clicks === 0);
     if (last3Flat && earlierHadActivity && statusOf.get(campaignId) === "Running") {
-      const title = `[${ownerLabel}] Tidak ada aktivitas: ${name}`;
-      if (!(await hasRecentAlert(supabase, { networkId: network.id, type: "no_activity", title, cooldownMs: ALERT_COOLDOWN_MS }))) {
+      const titleSuffix = `Tidak ada aktivitas: ${name}`;
+      if (!(await hasRecentAlert(supabase, { networkId: network.id, type: "no_activity", titleSuffix, cooldownMs: ALERT_COOLDOWN_MS }))) {
         await raiseAlert(supabase, {
           workspaceId: network.workspace_id,
           networkId: network.id,
           type: "no_activity",
-          title,
+          title: `[${ownerLabel}] ${titleSuffix}`,
           message: `Campaign "${name}" di ${network.name} berstatus Running tapi 3 hari terakhir tidak ada spend/klik.`,
         });
       }
@@ -592,11 +592,12 @@ export async function runNetworkSync(
   network: NetworkRef,
   apiKey: string
 ): Promise<{ campaigns: number; days: number }> {
-  const { data: ownerProfile } = await supabase
+  const { data: ownerProfile, error: ownerProfileError } = await supabase
     .from("profiles")
     .select("full_name, email")
     .eq("id", network.user_id)
     .maybeSingle();
+  if (ownerProfileError) console.error("Gagal ambil nama pemilik network:", ownerProfileError.message);
   const ownerLabel = ownerProfile?.full_name || ownerProfile?.email || "tanpa nama";
 
   const { data: beforeCampaigns } = await supabase.from("campaigns").select("id").eq("network_id", network.id);

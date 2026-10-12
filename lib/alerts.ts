@@ -30,10 +30,14 @@ export async function raiseAlert(
   await sendTelegramAlert(`${emojiFor[params.type]} <b>${params.title}</b>\n${params.message}`);
 }
 
-/** Cegah alert yang sama nyepam tiap kali sync diklik berkali-kali dalam rentang waktu pendek. */
+/**
+ * Cegah alert yang sama nyepam tiap kali sync diklik berkali-kali dalam rentang waktu pendek.
+ * `titleSuffix` dicocokin pakai LIKE "%...suffix" karena judul alert sekarang diawali
+ * "[nama pemilik] ..." — bagian depannya bisa beda meski alert-nya sama secara substansi.
+ */
 export async function hasRecentAlert(
   supabase: Supabase,
-  params: { networkId: string; type: AlertType; title?: string; cooldownMs: number }
+  params: { networkId: string; type: AlertType; titleSuffix?: string; cooldownMs: number }
 ) {
   const since = new Date(Date.now() - params.cooldownMs).toISOString();
   let query = supabase
@@ -42,7 +46,7 @@ export async function hasRecentAlert(
     .eq("network_id", params.networkId)
     .eq("type", params.type)
     .gte("created_at", since);
-  if (params.title) query = query.eq("title", params.title);
+  if (params.titleSuffix) query = query.like("title", `%${params.titleSuffix}`);
 
   const { data } = await query.limit(1).maybeSingle();
   return Boolean(data);
