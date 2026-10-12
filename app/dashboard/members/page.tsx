@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { InviteMemberForm } from "@/components/dashboard/InviteMemberForm";
 import { Users, AlertTriangle } from "lucide-react";
 
 type MemberRow = {
@@ -16,8 +17,14 @@ const roleStyle: Record<string, string> = {
   Viewer: "bg-muted/15 text-muted",
 };
 
-async function getMembers(): Promise<{ workspaceName: string; members: MemberRow[] } | { error: string }> {
+async function getMembers(): Promise<
+  { workspaceName: string; members: MemberRow[]; isOwner: boolean } | { error: string }
+> {
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   const { data: workspace, error: workspaceError } = await supabase
     .from("workspaces")
@@ -27,7 +34,17 @@ async function getMembers(): Promise<{ workspaceName: string; members: MemberRow
     .maybeSingle();
 
   if (workspaceError) return { error: workspaceError.message };
-  if (!workspace) return { workspaceName: "", members: [] };
+  if (!workspace) return { workspaceName: "", members: [], isOwner: false };
+
+  const { data: myMembership } = user
+    ? await supabase
+        .from("workspace_members")
+        .select("role")
+        .eq("workspace_id", workspace.id)
+        .eq("user_id", user.id)
+        .maybeSingle()
+    : { data: null };
+  const isOwner = myMembership?.role === "Owner";
 
   const { data: members, error: membersError } = await supabase
     .from("workspace_members")
@@ -35,7 +52,7 @@ async function getMembers(): Promise<{ workspaceName: string; members: MemberRow
     .eq("workspace_id", workspace.id);
 
   if (membersError) return { error: membersError.message };
-  if (!members || members.length === 0) return { workspaceName: workspace.name, members: [] };
+  if (!members || members.length === 0) return { workspaceName: workspace.name, members: [], isOwner };
 
   const { data: profiles, error: profilesError } = await supabase
     .from("profiles")
@@ -62,7 +79,7 @@ async function getMembers(): Promise<{ workspaceName: string; members: MemberRow
     })
     .sort((a, b) => (a.role === "Owner" ? -1 : b.role === "Owner" ? 1 : 0));
 
-  return { workspaceName: workspace.name, members: rows };
+  return { workspaceName: workspace.name, members: rows, isOwner };
 }
 
 export default async function MembersPage() {
@@ -86,7 +103,7 @@ export default async function MembersPage() {
     );
   }
 
-  const { workspaceName, members } = result;
+  const { workspaceName, members, isOwner } = result;
 
   return (
     <div className="space-y-5">
@@ -96,6 +113,8 @@ export default async function MembersPage() {
           Anggota workspace {workspaceName ? `"${workspaceName}"` : ""} dan role masing-masing.
         </p>
       </div>
+
+      {isOwner ? <InviteMemberForm /> : null}
 
       <div className="rounded-xl border border-border bg-surface">
         {members.length === 0 ? (
