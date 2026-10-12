@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { InviteMemberForm } from "@/components/dashboard/InviteMemberForm";
+import { RemoveMemberButton } from "@/components/dashboard/RemoveMemberButton";
 import { Users, AlertTriangle } from "lucide-react";
 
 type MemberRow = {
@@ -131,6 +132,7 @@ export default async function MembersPage() {
                 <th className="font-medium px-4 py-3">Email</th>
                 <th className="font-medium px-4 py-3">Role</th>
                 <th className="font-medium px-4 py-3">Joined</th>
+                {isOwner ? <th className="font-medium px-4 py-3 text-right">Aksi</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -146,6 +148,15 @@ export default async function MembersPage() {
                   <td className="px-4 py-3 text-muted">
                     {new Date(m.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
                   </td>
+                  {isOwner ? (
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end">
+                        {m.role !== "Owner" ? (
+                          <RemoveMemberButton userId={m.user_id} name={m.full_name || m.email} />
+                        ) : null}
+                      </div>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
