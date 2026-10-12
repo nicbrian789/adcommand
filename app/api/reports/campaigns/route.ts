@@ -22,28 +22,33 @@ export async function GET(request: NextRequest) {
 
   if (!workspace) return NextResponse.json({ error: "Belum ada workspace." }, { status: 404 });
 
-  const { data: networks } = await supabase
-    .from("ad_networks")
-    .select("id, name")
-    .eq("workspace_id", workspace.id);
-  const networkName = new Map((networks ?? []).map((n) => [n.id, n.name]));
-
-  const { data: campaigns, error: campaignsError } = await supabase
-    .from("campaigns")
-    .select("id, name, status, network_id")
-    .eq("workspace_id", workspace.id);
+  const [
+    { data: networks },
+    { data: campaigns, error: campaignsError },
+    { data: stats, error: statsError },
+  ] = await Promise.all([
+    supabase.from("ad_networks").select("id, name, user_id").eq("workspace_id", workspace.id),
+    supabase.from("campaigns").select("id, name, status, network_id").eq("workspace_id", workspace.id),
+    supabase
+      .from("campaign_stats")
+      .select("campaign_id, spend, impressions, clicks, conversions, revenue")
+      .eq("workspace_id", workspace.id)
+      .eq("country", "ALL")
+      .gte("stat_date", range.from)
+      .lte("stat_date", range.to),
+  ]);
 
   if (campaignsError) return NextResponse.json({ error: campaignsError.message }, { status: 500 });
-
-  const { data: stats, error: statsError } = await supabase
-    .from("campaign_stats")
-    .select("campaign_id, spend, impressions, clicks, conversions, revenue")
-    .eq("workspace_id", workspace.id)
-    .eq("country", "ALL")
-    .gte("stat_date", range.from)
-    .lte("stat_date", range.to);
-
   if (statsError) return NextResponse.json({ error: statsError.message }, { status: 500 });
+
+  const networkName = new Map((networks ?? []).map((n) => [n.id, n.name]));
+  const networkOwner = new Map((networks ?? []).map((n) => [n.id, n.user_id]));
+
+  const ownerIds = [...new Set((networks ?? []).map((n) => n.user_id))];
+  const { data: profiles } = ownerIds.length
+    ? await supabase.from("profiles").select("id, email, full_name").in("id", ownerIds)
+    : { data: [] };
+  const ownerName = new Map((profiles ?? []).map((p) => [p.id, p.full_name || p.email || "(tanpa nama)"]));
 
   type Totals = { spend: number; impressions: number; clicks: number; conversions: number; revenue: number };
   const totals = new Map<string, Totals>();
@@ -62,8 +67,10 @@ export async function GET(request: NextRequest) {
       const t = totals.get(c.id) ?? { spend: 0, impressions: 0, clicks: 0, conversions: 0, revenue: 0 };
       const ctr = t.impressions > 0 ? (t.clicks / t.impressions) * 100 : 0;
       const roas = t.spend > 0 ? t.revenue / t.spend : 0;
+      const ownerId = networkOwner.get(c.network_id);
       return [
         networkName.get(c.network_id) ?? "-",
+        (ownerId && ownerName.get(ownerId)) || "-",
         c.name,
         c.status,
         t.spend.toFixed(2),
@@ -75,10 +82,10 @@ export async function GET(request: NextRequest) {
         `${roas.toFixed(2)}x`,
       ] as (string | number)[];
     })
-    .sort((a, b) => Number(b[3]) - Number(a[3]));
+    .sort((a, b) => Number(b[4]) - Number(a[4]));
 
   const csv = toCsv(
-    ["Network", "Campaign", "Status", "Spend", "Impressions", "Klik", "CTR", "Konversi", "Revenue", "ROAS"],
+    ["Network", "Pemilik", "Campaign", "Status", "Spend", "Impressions", "Klik", "CTR", "Konversi", "Revenue", "ROAS"],
     rows
   );
 
