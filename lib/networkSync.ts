@@ -152,71 +152,83 @@ async function syncTrafficStars(supabase: Supabase, network: { id: string; works
   await saveBalance(supabase, network.id, await getTrafficStarsBalance(accessToken));
   const tsCampaigns = await listTrafficStarsCampaigns(accessToken);
 
-  let saved = 0;
-  for (const tc of tsCampaigns) {
-    const campaignId = await upsertCampaign(
-      supabase,
-      network.workspace_id,
-      network.id,
-      String(tc.id),
-      tc.name,
-      statusMap[tc.status] ?? "Stopped"
-    );
+  const perCampaignSaved = await Promise.all(
+    tsCampaigns.map(async (tc) => {
+      const campaignId = await upsertCampaign(
+        supabase,
+        network.workspace_id,
+        network.id,
+        String(tc.id),
+        tc.name,
+        statusMap[tc.status] ?? "Stopped"
+      );
 
-    const totals = await getTrafficStarsDailyStats(accessToken, tc.id, dateFrom, dateTo);
-    saved += await saveStats(
-      supabase,
-      totals.map((s) => ({
-        workspace_id: network.workspace_id,
-        campaign_id: campaignId,
-        stat_date: s.name.slice(0, 10),
-        country: ALL,
-        spend: s.costs,
-        impressions: s.impressions,
-        clicks: s.clicks,
-        conversions: s.leads,
-        revenue: s.earnings,
-      }))
-    );
+      let saved = 0;
 
-    for (const day of days) {
-      const geo = await getTrafficStarsCountryStats(accessToken, tc.id, day);
-      const rows: StatRow[] = [];
-      for (const s of geo) {
-        const country = normalizeCountry(s.name);
-        if (!country) continue;
-        rows.push({
+      const [totals, geoByDay, sites] = await Promise.all([
+        getTrafficStarsDailyStats(accessToken, tc.id, dateFrom, dateTo),
+        Promise.all(days.map((day) => getTrafficStarsCountryStats(accessToken, tc.id, day))),
+        getTrafficStarsSiteStats(accessToken, tc.id, dateFrom, dateTo),
+      ]);
+
+      saved += await saveStats(
+        supabase,
+        totals.map((s) => ({
           workspace_id: network.workspace_id,
           campaign_id: campaignId,
-          stat_date: day,
-          country,
+          stat_date: s.name.slice(0, 10),
+          country: ALL,
           spend: s.costs,
           impressions: s.impressions,
           clicks: s.clicks,
           conversions: s.leads,
           revenue: s.earnings,
-        });
-      }
-      saved += await saveStats(supabase, rows);
-    }
-
-    const sites = await getTrafficStarsSiteStats(accessToken, tc.id, dateFrom, dateTo);
-    await saveSiteStats(
-      supabase,
-      sites
-        .filter((s) => s.name)
-        .map((s) => ({
-          workspace_id: network.workspace_id,
-          campaign_id: campaignId,
-          site_key: String(s.name),
-          stat_date: dateTo,
-          spend: s.costs,
-          impressions: s.impressions,
-          clicks: s.clicks,
-          conversions: s.leads,
         }))
-    );
-  }
+      );
+
+      for (let i = 0; i < days.length; i++) {
+        const day = days[i];
+        const geo = geoByDay[i];
+        const rows: StatRow[] = [];
+        for (const s of geo) {
+          const country = normalizeCountry(s.name);
+          if (!country) continue;
+          rows.push({
+            workspace_id: network.workspace_id,
+            campaign_id: campaignId,
+            stat_date: day,
+            country,
+            spend: s.costs,
+            impressions: s.impressions,
+            clicks: s.clicks,
+            conversions: s.leads,
+            revenue: s.earnings,
+          });
+        }
+        saved += await saveStats(supabase, rows);
+      }
+
+      await saveSiteStats(
+        supabase,
+        sites
+          .filter((s) => s.name)
+          .map((s) => ({
+            workspace_id: network.workspace_id,
+            campaign_id: campaignId,
+            site_key: String(s.name),
+            stat_date: dateTo,
+            spend: s.costs,
+            impressions: s.impressions,
+            clicks: s.clicks,
+            conversions: s.leads,
+          }))
+      );
+
+      return saved;
+    })
+  );
+
+  const saved = perCampaignSaved.reduce((sum, n) => sum + n, 0);
 
   return { campaigns: tsCampaigns.length, days: saved };
 }
@@ -369,9 +381,16 @@ async function syncTrafficJunky(supabase: Supabase, network: { id: string; works
   const campaignIds = new Set<string>();
   let saved = 0;
 
-  for (const day of days) {
-    const d = new Date(`${day}T00:00:00Z`);
-    const items = await getTrafficJunkyStats(token, d, d);
+  const itemsByDay = await Promise.all(
+    days.map((day) => {
+      const d = new Date(`${day}T00:00:00Z`);
+      return getTrafficJunkyStats(token, d, d);
+    })
+  );
+
+  for (let i = 0; i < days.length; i++) {
+    const day = days[i];
+    const items = itemsByDay[i];
 
     const rows: StatRow[] = [];
     for (const item of items) {
