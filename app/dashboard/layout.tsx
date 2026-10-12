@@ -9,10 +9,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (isSupabaseConfigured) {
     const supabase = await createClient();
-    const { data: rows } = await supabase
-      .from("ad_networks")
-      .select("id, name")
-      .order("name", { ascending: true });
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const { data: rows } = user
+      ? await supabase
+          .from("ad_networks")
+          .select("id, name")
+          .eq("user_id", user.id)
+          .order("name", { ascending: true })
+      : { data: [] };
 
     const { data: statRows } = await supabase.from("campaign_stats").select("campaign_id");
     const statCampaignIds = [...new Set((statRows ?? []).map((s) => s.campaign_id))];
