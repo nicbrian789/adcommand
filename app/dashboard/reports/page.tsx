@@ -17,6 +17,9 @@ export default async function ReportsPage({
   const range = resolveDateRange(from, to);
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const { data: workspace } = await supabase
     .from("workspaces")
     .select("id, name")
@@ -24,12 +27,25 @@ export default async function ReportsPage({
     .limit(1)
     .maybeSingle();
 
+  const { data: myMembership } = user && workspace
+    ? await supabase
+        .from("workspace_members")
+        .select("role")
+        .eq("workspace_id", workspace.id)
+        .eq("user_id", user.id)
+        .maybeSingle()
+    : { data: null };
+  const isOwner = myMembership?.role === "Owner";
+
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-lg font-semibold">Reports</h1>
         <p className="text-sm text-muted">
-          Export data campaign workspace {workspace?.name ? `"${workspace.name}"` : ""} ke file CSV (bisa dibuka di Excel/Sheets).
+          Export data campaign workspace {workspace?.name ? `"${workspace.name}"` : ""} ke file CSV (bisa dibuka di Excel/Sheets).{" "}
+          {isOwner
+            ? "Sebagai Owner, laporan ini berisi campaign semua anggota tim (ada kolom Pemilik)."
+            : "Laporan ini cuma berisi campaign dari network yang kamu kelola sendiri."}
         </p>
       </div>
 
@@ -46,7 +62,7 @@ export default async function ReportsPage({
           <div className="flex-1">
             <p className="text-sm font-medium">Laporan Campaign</p>
             <p className="text-xs text-muted mt-0.5">
-              Semua campaign (dikelompokkan per network): spend, impressions, klik, CTR, konversi, revenue, dan ROAS untuk {range.from} s/d {range.to}.
+              {isOwner ? "Campaign semua anggota tim" : "Campaign kamu sendiri"} (dikelompokkan per network): spend, impressions, klik, CTR, konversi, revenue, dan ROAS untuk {range.from} s/d {range.to}.
             </p>
           </div>
           <a
