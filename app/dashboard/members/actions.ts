@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { NETWORK_TYPES } from "@/lib/networks";
 
 export async function inviteMember(email: string, fullName: string) {
   const supabase = await createClient();
@@ -12,9 +13,18 @@ export async function inviteMember(email: string, fullName: string) {
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Sesi kamu sudah habis. Silakan masuk lagi.");
 
+  const { data: workspace } = await supabase
+    .from("workspaces")
+    .select("id")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!workspace) throw new Error("Belum ada workspace.");
+
   const { data: membership } = await supabase
     .from("workspace_members")
     .select("role")
+    .eq("workspace_id", workspace.id)
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -26,14 +36,27 @@ export async function inviteMember(email: string, fullName: string) {
   const redirectTo = host ? `${protocol}://${host}/reset-password` : undefined;
 
   const admin = createAdminClient();
-  const { error } = await admin.auth.admin.inviteUserByEmail(email, {
+  const { data: inviteData, error } = await admin.auth.admin.inviteUserByEmail(email, {
     data: fullName ? { full_name: fullName } : undefined,
     redirectTo,
   });
 
   if (error) throw new Error(error.message);
 
+  const newUserId = inviteData.user?.id;
+  if (newUserId) {
+    const defaultNetworks = NETWORK_TYPES.filter((t) => t.value !== "other").map((t) => ({
+      workspace_id: workspace.id,
+      user_id: newUserId,
+      name: t.label,
+      provider: t.value,
+      enabled: true,
+    }));
+    await admin.from("ad_networks").insert(defaultNetworks);
+  }
+
   revalidatePath("/dashboard/members");
+  revalidatePath("/dashboard/networks");
 }
 
 export async function removeMember(targetUserId: string) {
