@@ -45,7 +45,6 @@ export function TrafficStarsCreateCampaignForm({
           .filter(Boolean),
       });
       setSuccess(result);
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal bikin campaign.");
     } finally {
@@ -64,6 +63,12 @@ export function TrafficStarsCreateCampaignForm({
         <p className="text-xs text-muted mt-1">
           Materi iklan (gambar/video) belum ke-upload — lanjutin dari website TrafficStars langsung buat nambahin creative.
         </p>
+        <button
+          onClick={() => router.push("/dashboard/networks")}
+          className="mt-2 rounded-lg bg-accent text-white text-sm font-medium px-4 py-2 hover:bg-accent/90"
+        >
+          Kembali ke Networks
+        </button>
       </div>
     );
   }
