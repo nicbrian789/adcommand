@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { NetworkActions } from "@/components/dashboard/NetworkActions";
 import { SyncNetworkButton } from "@/components/dashboard/SyncNetworkButton";
+import { NetworkLinkButton } from "@/components/dashboard/NetworkLinkButton";
 import { isSyncSupported } from "@/lib/networks";
 
 type NetworkRow = {
@@ -13,6 +14,7 @@ type NetworkRow = {
   created_at: string;
   user_id: string;
   hasKey: boolean;
+  externalUrl: string | null;
 };
 
 type OwnerGroup = {
@@ -63,6 +65,7 @@ export function NetworksByMember({
                 <th className="font-medium px-4 py-2">Status</th>
                 <th className="font-medium px-4 py-2">API key</th>
                 <th className="font-medium px-4 py-2">Ditambahkan</th>
+                <th className="font-medium px-4 py-2 text-right">Link</th>
                 <th className="font-medium px-4 py-2 text-right">Aksi</th>
               </tr>
             </thead>
@@ -85,6 +88,11 @@ export function NetworksByMember({
                     <td className="px-4 py-3 text-muted">{n.hasKey ? "Tersimpan" : "Belum ada"}</td>
                     <td className="px-4 py-3 text-muted">
                       {new Date(n.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end">
+                        <NetworkLinkButton networkId={n.id} url={n.externalUrl} canEdit={isMine} />
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end">

@@ -37,3 +37,28 @@ export async function syncNetwork(networkId: string): Promise<{ campaigns: numbe
 
   return result;
 }
+
+export async function setNetworkUrl(networkId: string, url: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sesi kamu sudah habis. Silakan masuk lagi.");
+
+  const trimmed = url.trim();
+  if (trimmed && !/^https?:\/\//i.test(trimmed)) {
+    throw new Error("Link harus diawali http:// atau https://");
+  }
+
+  const { data, error } = await supabase
+    .from("ad_networks")
+    .update({ external_url: trimmed || null })
+    .eq("id", networkId)
+    .eq("user_id", user.id)
+    .select("id");
+
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) throw new Error("Network bukan punya kamu.");
+
+  revalidatePath("/dashboard/networks");
+}

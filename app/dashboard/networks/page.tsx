@@ -12,6 +12,7 @@ type NetworkRow = {
   created_at: string;
   user_id: string;
   hasKey: boolean;
+  externalUrl: string | null;
 };
 
 async function getNetworks(): Promise<
@@ -61,7 +62,7 @@ async function getNetworks(): Promise<
   ] = await Promise.all([
     supabase
       .from("ad_networks")
-      .select("id, name, provider, enabled, created_at, user_id, credential_ref")
+      .select("id, name, provider, enabled, created_at, user_id, credential_ref, external_url")
       .eq("workspace_id", workspace.id)
       .order("created_at", { ascending: false }),
     supabase.from("campaigns").select("network_id").eq("workspace_id", workspace.id),
@@ -71,9 +72,10 @@ async function getNetworks(): Promise<
   if (networksError) return { error: networksError.message };
   if (campaignsError) return { error: campaignsError.message };
 
-  const networks: NetworkRow[] = (rawNetworks ?? []).map(({ credential_ref, ...n }) => ({
+  const networks: NetworkRow[] = (rawNetworks ?? []).map(({ credential_ref, external_url, ...n }) => ({
     ...n,
     hasKey: credential_ref !== null,
+    externalUrl: external_url,
   }));
 
   const campaignCounts: Record<string, number> = {};
