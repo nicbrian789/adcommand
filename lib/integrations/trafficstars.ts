@@ -105,6 +105,64 @@ export async function getTrafficStarsCountryStats(
   return data.data ?? [];
 }
 
+export type TrafficStarsAdFormat = {
+  id: number;
+  name: string;
+  type_id: number;
+  type: string;
+  ad_types: { id: string; name: string }[];
+};
+
+export async function getTrafficStarsAdFormats(accessToken: string): Promise<TrafficStarsAdFormat[]> {
+  const res = await fetch(`${BASE_URL}/v1.1/ad_formats`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Gagal mengambil daftar format iklan (${res.status})`);
+  }
+
+  const data = (await res.json()) as TrafficStarsAdFormat[] | { response: TrafficStarsAdFormat[] };
+  return Array.isArray(data) ? data : (data.response ?? []);
+}
+
+export type CreateTrafficStarsCampaignInput = {
+  name: string;
+  formatId: number;
+  pricingModel: "cpm" | "cpc" | "cpa";
+  price: number;
+  maxDaily?: number;
+  countries?: string[];
+};
+
+export async function createTrafficStarsCampaign(
+  accessToken: string,
+  input: CreateTrafficStarsCampaignInput
+): Promise<{ id: number; status: string }> {
+  const body: Record<string, unknown> = {
+    name: input.name,
+    format_id: input.formatId,
+    pricing_model: input.pricingModel,
+    price: input.price,
+    hours_targeting: "1".repeat(24),
+  };
+  if (input.maxDaily && input.maxDaily > 0) body.max_daily = input.maxDaily;
+  if (input.countries && input.countries.length > 0) body.countries = input.countries;
+
+  const res = await fetch(`${BASE_URL}/v1.1/campaigns`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Gagal bikin campaign TrafficStars (${res.status}): ${text.slice(0, 400)}`);
+  }
+
+  return res.json();
+}
+
 export async function getTrafficStarsDailyStats(
   accessToken: string,
   campaignId: number,

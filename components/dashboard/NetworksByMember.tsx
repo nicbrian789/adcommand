@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { PlusCircle } from "lucide-react";
 import { NetworkActions } from "@/components/dashboard/NetworkActions";
 import { SyncNetworkButton } from "@/components/dashboard/SyncNetworkButton";
 import { NetworkLinkButton } from "@/components/dashboard/NetworkLinkButton";
-import { isSyncSupported } from "@/lib/networks";
+import { isSyncSupported, isCreateCampaignSupported } from "@/lib/networks";
 
 type NetworkRow = {
   id: string;
@@ -95,7 +97,17 @@ export function NetworksByMember({
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex justify-end">
+                      <div className="flex justify-end items-center gap-2">
+                        {isMine && n.hasKey && isCreateCampaignSupported(n.provider) ? (
+                          <Link
+                            href={`/dashboard/networks/${n.id}/create-campaign`}
+                            title={`Buat campaign baru di ${n.name}`}
+                            className="flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1.5 text-xs font-medium text-accent hover:bg-accent/20"
+                          >
+                            <PlusCircle size={12} />
+                            Buat Campaign
+                          </Link>
+                        ) : null}
                         {isMine ? (
                           <NetworkActions
                             networkId={n.id}

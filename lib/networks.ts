@@ -18,3 +18,9 @@ export function networkTypeLabel(provider: string | null) {
 export function isSyncSupported(provider: string | null) {
   return NETWORK_TYPES.find((t) => t.value === provider)?.syncSupported ?? false;
 }
+
+const CREATE_CAMPAIGN_SUPPORTED = ["trafficstars"];
+
+export function isCreateCampaignSupported(provider: string | null) {
+  return provider !== null && CREATE_CAMPAIGN_SUPPORTED.includes(provider);
+}
