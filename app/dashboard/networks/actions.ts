@@ -55,10 +55,30 @@ export async function setNetworkUrl(networkId: string, url: string) {
     .update({ external_url: trimmed || null })
     .eq("id", networkId)
     .eq("user_id", user.id)
-    .select("id");
+    .select("id, provider, workspace_id")
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
-  if (!data || data.length === 0) throw new Error("Network bukan punya kamu.");
+  if (!data) throw new Error("Network bukan punya kamu.");
+
+  if (trimmed) {
+    const { data: myMembership } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", data.workspace_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (myMembership?.role === "Owner" && data.provider) {
+      await supabase
+        .from("ad_networks")
+        .update({ external_url: trimmed })
+        .eq("workspace_id", data.workspace_id)
+        .eq("provider", data.provider)
+        .is("external_url", null)
+        .neq("id", networkId);
+    }
+  }
 
   revalidatePath("/dashboard/networks");
 }
