@@ -91,7 +91,7 @@ export function NetworksByMember({
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end">
-                        <NetworkLinkButton networkId={n.id} url={n.externalUrl} canEdit={isMine} />
+                        <NetworkLinkButton networkId={n.id} networkName={n.name} url={n.externalUrl} canEdit={isMine} />
                       </div>
                     </td>
                     <td className="px-4 py-3">

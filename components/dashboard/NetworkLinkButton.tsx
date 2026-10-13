@@ -7,10 +7,12 @@ import { setNetworkUrl } from "@/app/dashboard/networks/actions";
 
 export function NetworkLinkButton({
   networkId,
+  networkName,
   url,
   canEdit,
 }: {
   networkId: string;
+  networkName: string;
   url: string | null;
   canEdit: boolean;
 }) {
@@ -73,11 +75,11 @@ export function NetworkLinkButton({
           href={url}
           target="_blank"
           rel="noopener noreferrer"
-          title={url}
-          className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted hover:text-foreground"
+          title={`Buka halaman login ${networkName} di tab baru\n${url}`}
+          className="flex items-center gap-1.5 rounded-lg border border-success/40 bg-success/10 px-2.5 py-1.5 text-xs font-medium text-success hover:bg-success/20"
         >
           <ExternalLink size={12} />
-          Buka
+          Buka {networkName}
         </a>
         {canEdit ? (
           <button
@@ -97,6 +99,7 @@ export function NetworkLinkButton({
   return (
     <button
       onClick={() => setEditing(true)}
+      title={`Simpan link dashboard ${networkName} biar bisa dibuka 1 klik`}
       className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-2.5 py-1.5 text-xs text-muted hover:text-foreground"
     >
       <Link2 size={12} />
