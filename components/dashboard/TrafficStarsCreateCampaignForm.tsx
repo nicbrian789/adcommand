@@ -19,6 +19,8 @@ export function TrafficStarsCreateCampaignForm({
   const router = useRouter();
   const [name, setName] = useState("");
   const [formatId, setFormatId] = useState<number>(formats[0]?.id ?? 0);
+  const selectedFormat = formats.find((f) => f.id === formatId);
+  const [adType, setAdType] = useState<string>(selectedFormat?.ad_types[0]?.id ?? "");
   const [pricingModel, setPricingModel] = useState<"cpm" | "cpc" | "cpa">("cpm");
   const [price, setPrice] = useState("");
   const [maxDaily, setMaxDaily] = useState("");
@@ -26,6 +28,12 @@ export function TrafficStarsCreateCampaignForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ id: number; status: string } | null>(null);
+
+  function changeFormat(id: number) {
+    setFormatId(id);
+    const f = formats.find((x) => x.id === id);
+    setAdType(f?.ad_types[0]?.id ?? "");
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -36,6 +44,7 @@ export function TrafficStarsCreateCampaignForm({
       const result = await createTrafficStarsCampaignAction(networkId, {
         name,
         formatId,
+        adType,
         pricingModel,
         price: Number(price),
         maxDaily: maxDaily ? Number(maxDaily) : 0,
@@ -91,13 +100,25 @@ export function TrafficStarsCreateCampaignForm({
         <label className="block text-xs text-muted mb-1.5">Format iklan</label>
         <select
           value={formatId}
-          onChange={(e) => setFormatId(Number(e.target.value))}
+          onChange={(e) => changeFormat(Number(e.target.value))}
           className={inputClass}
         >
           {formats.length === 0 ? <option value={0}>Tidak ada format tersedia</option> : null}
           {formats.map((f) => (
             <option key={f.id} value={f.id}>
               {f.name} ({f.type})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-xs text-muted mb-1.5">Jenis iklan</label>
+        <select value={adType} onChange={(e) => setAdType(e.target.value)} className={inputClass}>
+          {(selectedFormat?.ad_types ?? []).length === 0 ? <option value="">Tidak ada pilihan</option> : null}
+          {(selectedFormat?.ad_types ?? []).map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
             </option>
           ))}
         </select>

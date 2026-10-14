@@ -129,6 +129,7 @@ export async function getTrafficStarsAdFormats(accessToken: string): Promise<Tra
 export type CreateTrafficStarsCampaignInput = {
   name: string;
   formatId: number;
+  adType: string;
   pricingModel: "cpm" | "cpc" | "cpa";
   price: number;
   maxDaily?: number;
@@ -142,6 +143,7 @@ export async function createTrafficStarsCampaign(
   const body: Record<string, unknown> = {
     name: input.name,
     format_id: input.formatId,
+    ad_type: input.adType,
     pricing_model: input.pricingModel,
     price: input.price,
     hours_targeting: "1".repeat(24),

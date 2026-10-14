@@ -6,7 +6,15 @@ import { getTrafficStarsAccessToken, createTrafficStarsCampaign } from "@/lib/in
 
 export async function createTrafficStarsCampaignAction(
   networkId: string,
-  input: { name: string; formatId: number; pricingModel: "cpm" | "cpc" | "cpa"; price: number; maxDaily: number; countries: string[] }
+  input: {
+    name: string;
+    formatId: number;
+    adType: string;
+    pricingModel: "cpm" | "cpc" | "cpa";
+    price: number;
+    maxDaily: number;
+    countries: string[];
+  }
 ): Promise<{ id: number; status: string }> {
   try {
     const supabase = await createClient();
@@ -25,6 +33,7 @@ export async function createTrafficStarsCampaignAction(
 
     if (!input.name.trim()) throw new Error("Nama campaign wajib diisi.");
     if (!input.formatId) throw new Error("Pilih format iklan dulu.");
+    if (!input.adType) throw new Error("Pilih jenis iklan dulu.");
     if (!input.price || input.price <= 0) throw new Error("Harga/bid harus lebih dari 0.");
 
     const { data: apiKey, error: keyError } = await supabase.rpc("get_network_api_key", {
@@ -37,6 +46,7 @@ export async function createTrafficStarsCampaignAction(
     const result = await createTrafficStarsCampaign(accessToken, {
       name: input.name,
       formatId: input.formatId,
+      adType: input.adType,
       pricingModel: input.pricingModel,
       price: input.price,
       maxDaily: input.maxDaily,
