@@ -299,15 +299,19 @@ export function TrafficStarsCampaignBanners({
             />
           </div>
           <div>
-            <label className="block text-xs text-muted mb-1.5">Gambar/video — boleh pilih lebih dari 1</label>
+            <label className="block text-xs text-muted mb-1.5">Gambar/video — klik lagi buat nambah lebih dari 1</label>
             <input
               type="file"
               accept="image/*,video/*"
               multiple
-              onChange={(e) => setImages(e.target.files ? Array.from(e.target.files) : [])}
+              onChange={(e) => {
+                const picked = e.target.files ? Array.from(e.target.files) : [];
+                setImages((prev) => [...prev, ...picked]);
+                e.target.value = "";
+              }}
               className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent file:text-white file:px-3 file:py-1.5 file:text-xs file:font-medium"
             />
-            <FilePreviewThumbnails files={images} />
+            <FilePreviewThumbnails files={images} onRemove={(i) => setImages((prev) => prev.filter((_, idx) => idx !== i))} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <input

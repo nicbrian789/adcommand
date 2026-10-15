@@ -155,19 +155,23 @@ export function TrafficStarsCreateCampaignForm({
 
           <div>
             <label className="block text-xs text-muted mb-1.5">
-              Gambar/video banner — boleh pilih lebih dari 1 sekaligus buat rotasi/A-B test (opsional buat tes, wajib biar iklan bisa tayang)
+              Gambar/video banner — klik lagi buat nambah lebih dari 1, buat rotasi/A-B test (opsional buat tes, wajib biar iklan bisa tayang)
             </label>
             <input
               type="file"
               accept="image/*,video/*"
               multiple
-              onChange={(e) => setImages(e.target.files ? Array.from(e.target.files) : [])}
+              onChange={(e) => {
+                const picked = e.target.files ? Array.from(e.target.files) : [];
+                setImages((prev) => [...prev, ...picked]);
+                e.target.value = "";
+              }}
               className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent file:text-white file:px-3 file:py-1.5 file:text-xs file:font-medium"
             />
             {images.length > 0 ? (
               <p className="text-xs text-muted mt-1">{images.length} file dipilih — bakal jadi {images.length} banner terpisah.</p>
             ) : null}
-            <FilePreviewThumbnails files={images} />
+            <FilePreviewThumbnails files={images} onRemove={(i) => setImages((prev) => prev.filter((_, idx) => idx !== i))} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
