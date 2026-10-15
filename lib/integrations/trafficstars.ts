@@ -140,19 +140,16 @@ export type CreateTrafficStarsCampaignInput = {
   scheduleStartDate?: string;
 };
 
-export async function createTrafficStarsCampaign(
-  accessToken: string,
-  input: CreateTrafficStarsCampaignInput
-): Promise<{ id: number; status: string }> {
-  const body: Record<string, unknown> = {
-    name: input.name,
-    format_id: input.formatId,
-    type: input.adType,
-    ad_type: input.adType,
-    pricing_model: input.pricingModel,
-    price: input.price,
-    hours_targeting: "1".repeat(24),
-  };
+function buildTrafficStarsCampaignBody(input: Partial<CreateTrafficStarsCampaignInput>): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (input.name !== undefined) body.name = input.name;
+  if (input.formatId !== undefined) body.format_id = input.formatId;
+  if (input.adType !== undefined) {
+    body.type = input.adType;
+    body.ad_type = input.adType;
+  }
+  if (input.pricingModel !== undefined) body.pricing_model = input.pricingModel;
+  if (input.price !== undefined) body.price = input.price;
   if (input.maxDaily && input.maxDaily > 0) body.max_daily = input.maxDaily;
   if (input.countries && input.countries.length > 0) body.countries = input.countries;
   if (input.totalBudget && input.totalBudget > 0) {
@@ -165,6 +162,15 @@ export async function createTrafficStarsCampaign(
     body.schedule_start_time = `${input.scheduleStartDate} 00:00:00`;
     body.schedule_timezone = 0;
   }
+  return body;
+}
+
+export async function createTrafficStarsCampaign(
+  accessToken: string,
+  input: CreateTrafficStarsCampaignInput
+): Promise<{ id: number; status: string }> {
+  const body = buildTrafficStarsCampaignBody(input);
+  body.hours_targeting = "1".repeat(24);
 
   const res = await fetch(`${BASE_URL}/v1.1/campaigns`, {
     method: "POST",
@@ -175,6 +181,74 @@ export async function createTrafficStarsCampaign(
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Gagal bikin campaign TrafficStars (${res.status}): ${text.slice(0, 400)}`);
+  }
+
+  return res.json();
+}
+
+export type TrafficStarsCampaignDetail = {
+  id: number;
+  name: string;
+  status: string;
+  format_id: number;
+  type?: string;
+  ad_type?: string;
+  pricing_model: "cpm" | "cpc" | "cpa";
+  price: number;
+  max_daily?: number | null;
+  total_budget?: number | null;
+  countries?: string[] | null;
+  traffic_type?: "ron" | "prime" | "members_area" | null;
+  weight?: number | null;
+};
+
+export async function getTrafficStarsCampaign(accessToken: string, campaignId: number): Promise<TrafficStarsCampaignDetail> {
+  const res = await fetch(`${BASE_URL}/v1.1/campaigns/${campaignId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Gagal ambil detail campaign (${res.status}): ${text.slice(0, 400)}`);
+  }
+
+  return res.json();
+}
+
+export async function updateTrafficStarsCampaign(
+  accessToken: string,
+  campaignId: number,
+  input: Partial<CreateTrafficStarsCampaignInput>
+): Promise<{ id: number; status: string }> {
+  const body = buildTrafficStarsCampaignBody(input);
+
+  const res = await fetch(`${BASE_URL}/v1.1/campaigns/${campaignId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Gagal update campaign TrafficStars (${res.status}): ${text.slice(0, 400)}`);
+  }
+
+  return res.json();
+}
+
+export async function setTrafficStarsCampaignRunState(
+  accessToken: string,
+  campaignId: number,
+  action: "run" | "pause"
+): Promise<unknown> {
+  const res = await fetch(`${BASE_URL}/v1.1/campaigns/${campaignId}/${action}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Gagal ${action === "pause" ? "pause" : "jalankan"} campaign (${res.status}): ${text.slice(0, 400)}`);
   }
 
   return res.json();

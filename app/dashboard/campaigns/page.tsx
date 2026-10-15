@@ -4,8 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { AddCampaignForm } from "@/components/dashboard/AddCampaignForm";
 import { DateRangeFilter } from "@/components/dashboard/DateRangeFilter";
+import { CampaignPauseButton } from "@/components/dashboard/CampaignPauseButton";
 import { resolveDateRange } from "@/lib/dateRange";
-import { Megaphone, AlertTriangle } from "lucide-react";
+import { Megaphone, AlertTriangle, Pencil } from "lucide-react";
 
 type CampaignRow = {
   id: string;
@@ -13,6 +14,7 @@ type CampaignRow = {
   status: string;
   created_at: string;
   network_id: string;
+  external_id: string | null;
 };
 
 type CampaignTotals = {
@@ -37,7 +39,7 @@ async function getCampaignsData(range: { from: string; to: string }): Promise<
   | {
       workspaceId: string;
       workspaceName: string;
-      networks: { id: string; name: string }[];
+      networks: { id: string; name: string; provider: string | null }[];
       campaigns: CampaignRow[];
       totals: Record<string, CampaignTotals>;
     }
@@ -62,10 +64,10 @@ async function getCampaignsData(range: { from: string; to: string }): Promise<
     { data: campaigns, error: campaignsError },
     { data: stats, error: statsError },
   ] = await Promise.all([
-    supabase.from("ad_networks").select("id, name").eq("workspace_id", workspace.id).order("name", { ascending: true }),
+    supabase.from("ad_networks").select("id, name, provider").eq("workspace_id", workspace.id).order("name", { ascending: true }),
     supabase
       .from("campaigns")
-      .select("id, name, status, created_at, network_id")
+      .select("id, name, status, created_at, network_id, external_id")
       .eq("workspace_id", workspace.id)
       .order("created_at", { ascending: false }),
     supabase
@@ -129,6 +131,7 @@ export default async function CampaignsPage({
 
   const { workspaceId, workspaceName, networks, campaigns, totals } = result;
   const networkMap = new Map(networks.map((n) => [n.id, n.name]));
+  const networkProviderMap = new Map(networks.map((n) => [n.id, n.provider]));
 
   const networkSpend = new Map<string, number>();
   for (const c of campaigns) {
@@ -200,13 +203,14 @@ export default async function CampaignsPage({
                 <th className="font-medium px-4 py-3 text-right">Konversi</th>
                 <th className="font-medium px-4 py-3 text-right">Revenue</th>
                 <th className="font-medium px-4 py-3 text-right">ROAS</th>
+                <th className="font-medium px-4 py-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody>
               {networkGroups.map((group) => (
                 <Fragment key={group.networkId}>
                   <tr className="border-b border-border bg-surface-2/60">
-                    <td colSpan={9} className="px-4 py-2 text-xs font-semibold">
+                    <td colSpan={10} className="px-4 py-2 text-xs font-semibold">
                       <span className="rounded-full bg-accent/15 text-accent px-2.5 py-0.5">{group.networkName}</span>
                       <span className="ml-2 text-muted font-normal">{money(group.spend)} total spend</span>
                     </td>
@@ -215,6 +219,7 @@ export default async function CampaignsPage({
                     const t = totals[c.id];
                     const ctr = t && t.impressions > 0 ? (t.clicks / t.impressions) * 100 : null;
                     const roas = t && t.spend > 0 ? t.revenue / t.spend : null;
+                    const canManage = networkProviderMap.get(c.network_id) === "trafficstars" && !!c.external_id;
                     return (
                       <tr key={c.id} className="border-b border-border/60 last:border-0 hover:bg-surface-2/60">
                         <td className="px-4 py-3 pl-6">{c.name}</td>
@@ -230,6 +235,21 @@ export default async function CampaignsPage({
                         <td className="px-4 py-3 text-right">{t ? count(t.conversions) : "-"}</td>
                         <td className="px-4 py-3 text-right">{t ? money(t.revenue) : "-"}</td>
                         <td className="px-4 py-3 text-right">{roas !== null ? `${roas.toFixed(2)}x` : "-"}</td>
+                        <td className="px-4 py-3">
+                          {canManage ? (
+                            <div className="flex justify-end items-center gap-2">
+                              <Link
+                                href={`/dashboard/campaigns/${c.id}/edit`}
+                                title="Edit campaign ini"
+                                className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-surface-2"
+                              >
+                                <Pencil size={12} />
+                                Edit
+                              </Link>
+                              <CampaignPauseButton campaignId={c.id} status={c.status} />
+                            </div>
+                          ) : null}
+                        </td>
                       </tr>
                     );
                   })}
