@@ -39,6 +39,10 @@ export function TrafficStarsCreateCampaignForm({
 
   const [landingUrl, setLandingUrl] = useState("");
   const [images, setImages] = useState<File[]>([]);
+  const [headline, setHeadline] = useState("");
+  const [brandname, setBrandname] = useState("");
+  const [ctaBrandname, setCtaBrandname] = useState("");
+  const [frequencyCapping, setFrequencyCapping] = useState("");
   const [bannerLoading, setBannerLoading] = useState(false);
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [bannerDone, setBannerDone] = useState<{ banners: { id: number; uploaded: boolean }[] } | null>(null);
@@ -90,6 +94,10 @@ export function TrafficStarsCreateCampaignForm({
         campaignId: success.id,
         landingUrl,
         images,
+        headline,
+        brandname,
+        ctaBrandname,
+        frequencyCapping: frequencyCapping ? Number(frequencyCapping) : 0,
       });
       setBannerDone(result);
     } catch (err) {
@@ -146,18 +154,65 @@ export function TrafficStarsCreateCampaignForm({
 
           <div>
             <label className="block text-xs text-muted mb-1.5">
-              Gambar banner — boleh pilih lebih dari 1 sekaligus buat rotasi/A-B test (opsional buat tes, wajib biar iklan bisa tayang)
+              Gambar/video banner — boleh pilih lebih dari 1 sekaligus buat rotasi/A-B test (opsional buat tes, wajib biar iklan bisa tayang)
             </label>
             <input
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               multiple
               onChange={(e) => setImages(e.target.files ? Array.from(e.target.files) : [])}
               className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent file:text-white file:px-3 file:py-1.5 file:text-xs file:font-medium"
             />
             {images.length > 0 ? (
-              <p className="text-xs text-muted mt-1">{images.length} gambar dipilih — bakal jadi {images.length} banner terpisah.</p>
+              <p className="text-xs text-muted mt-1">{images.length} file dipilih — bakal jadi {images.length} banner terpisah.</p>
             ) : null}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-muted mb-1.5">Headline (buat native)</label>
+              <input
+                type="text"
+                value={headline}
+                onChange={(e) => setHeadline(e.target.value)}
+                placeholder="Opsional"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted mb-1.5">Brand name (buat native)</label>
+              <input
+                type="text"
+                value={brandname}
+                onChange={(e) => setBrandname(e.target.value)}
+                placeholder="Opsional"
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-muted mb-1.5">CTA brand name (wajib buat video)</label>
+              <input
+                type="text"
+                value={ctaBrandname}
+                onChange={(e) => setCtaBrandname(e.target.value)}
+                placeholder="Opsional, kecuali video"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted mb-1.5">Frequency cap (maks tayang ke 1 orang)</label>
+              <input
+                type="number"
+                min="0"
+                value={frequencyCapping}
+                onChange={(e) => setFrequencyCapping(e.target.value)}
+                placeholder="Kosongin kalau nggak dibatasi"
+                className={inputClass}
+              />
+            </div>
           </div>
 
           {bannerError ? (

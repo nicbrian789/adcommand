@@ -182,15 +182,28 @@ export async function createTrafficStarsCampaign(
 
 export async function createTrafficStarsBanner(
   accessToken: string,
-  input: { campaignId: number; landingUrl: string }
+  input: {
+    campaignId: number;
+    landingUrl: string;
+    headline?: string;
+    brandname?: string;
+    ctaBrandname?: string;
+    frequencyCapping?: number;
+  }
 ): Promise<{ id: number }> {
+  const body: Record<string, unknown> = {
+    campaign_id: input.campaignId,
+    urls: [{ url: input.landingUrl }],
+  };
+  if (input.headline) body.headline = input.headline;
+  if (input.brandname) body.brandname = input.brandname;
+  if (input.ctaBrandname) body.cta_brandname = input.ctaBrandname;
+  if (input.frequencyCapping && input.frequencyCapping > 0) body.frequency_capping = input.frequencyCapping;
+
   const res = await fetch(`${BASE_URL}/v1.1/banners`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      campaign_id: input.campaignId,
-      urls: [{ url: input.landingUrl }],
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {

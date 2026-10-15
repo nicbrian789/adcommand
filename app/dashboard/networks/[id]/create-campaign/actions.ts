@@ -102,7 +102,15 @@ export async function createTrafficStarsCampaignAction(
 
 export async function createTrafficStarsBannerAction(
   networkId: string,
-  input: { campaignId: number; landingUrl: string; images: File[] }
+  input: {
+    campaignId: number;
+    landingUrl: string;
+    images: File[];
+    headline: string;
+    brandname: string;
+    ctaBrandname: string;
+    frequencyCapping: number;
+  }
 ): Promise<{ banners: { id: number; uploaded: boolean }[] }> {
   try {
     const supabase = await createClient();
@@ -139,6 +147,10 @@ export async function createTrafficStarsBannerAction(
       const banner = await createTrafficStarsBanner(accessToken, {
         campaignId: input.campaignId,
         landingUrl: input.landingUrl.trim(),
+        headline: input.headline.trim() || undefined,
+        brandname: input.brandname.trim() || undefined,
+        ctaBrandname: input.ctaBrandname.trim() || undefined,
+        frequencyCapping: input.frequencyCapping,
       });
 
       const bannerId = Number(banner?.id);
