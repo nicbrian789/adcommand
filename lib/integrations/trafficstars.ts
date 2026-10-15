@@ -288,6 +288,82 @@ export async function createTrafficStarsBanner(
   return res.json();
 }
 
+export type TrafficStarsBanner = {
+  id: number;
+  campaign_id: number;
+  image?: string | null;
+  video?: string | null;
+  content?: string | null;
+  status: string;
+  headline?: string | null;
+  brandname?: string | null;
+  cta_brandname?: string | null;
+  frequency_capping?: number | null;
+  weight?: number | null;
+  urls?: { id: number; url: string }[];
+};
+
+export async function listTrafficStarsBanners(accessToken: string, campaignId: number): Promise<TrafficStarsBanner[]> {
+  const res = await fetch(`${BASE_URL}/v2/banners?campaign_id=${campaignId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Gagal ambil daftar banner (${res.status}): ${text.slice(0, 400)}`);
+  }
+
+  const data = (await res.json()) as { response?: TrafficStarsBanner[] } | TrafficStarsBanner[];
+  return Array.isArray(data) ? data : (data.response ?? []);
+}
+
+export async function updateTrafficStarsBanner(
+  accessToken: string,
+  bannerId: number,
+  input: {
+    landingUrl?: string;
+    landingUrlId?: number;
+    headline?: string;
+    brandname?: string;
+    ctaBrandname?: string;
+    frequencyCapping?: number;
+  }
+): Promise<TrafficStarsBanner> {
+  const body: Record<string, unknown> = {};
+  if (input.landingUrl) {
+    body.urls = [input.landingUrlId ? { id: input.landingUrlId, url: input.landingUrl } : { url: input.landingUrl }];
+  }
+  if (input.headline !== undefined) body.headline = input.headline;
+  if (input.brandname !== undefined) body.brandname = input.brandname;
+  if (input.ctaBrandname !== undefined) body.cta_brandname = input.ctaBrandname;
+  if (input.frequencyCapping !== undefined) body.frequency_capping = input.frequencyCapping;
+
+  const res = await fetch(`${BASE_URL}/v1.1/banners/${bannerId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Gagal update banner (${res.status}): ${text.slice(0, 400)}`);
+  }
+
+  return res.json();
+}
+
+export async function deleteTrafficStarsBanner(accessToken: string, bannerId: number): Promise<void> {
+  const res = await fetch(`${BASE_URL}/v1.1/banners/${bannerId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Gagal hapus banner (${res.status}): ${text.slice(0, 400)}`);
+  }
+}
+
 export async function uploadTrafficStarsBannerImage(accessToken: string, bannerId: number, file: File): Promise<unknown> {
   const form = new FormData();
   form.append("file", file, file.name);

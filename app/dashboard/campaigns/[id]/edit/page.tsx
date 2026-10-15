@@ -3,8 +3,9 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { getTrafficStarsAccessToken, getTrafficStarsCampaign } from "@/lib/integrations/trafficstars";
+import { getTrafficStarsAccessToken, getTrafficStarsCampaign, listTrafficStarsBanners } from "@/lib/integrations/trafficstars";
 import { TrafficStarsEditCampaignForm } from "@/components/dashboard/TrafficStarsEditCampaignForm";
+import { TrafficStarsCampaignBanners } from "@/components/dashboard/TrafficStarsCampaignBanners";
 
 export default async function EditCampaignPage({ params }: { params: Promise<{ id: string }> }) {
   if (!isSupabaseConfigured) {
@@ -63,9 +64,13 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   }
 
   let detail;
+  let banners;
   try {
     const accessToken = await getTrafficStarsAccessToken(apiKey);
-    detail = await getTrafficStarsCampaign(accessToken, Number(campaign.external_id));
+    [detail, banners] = await Promise.all([
+      getTrafficStarsCampaign(accessToken, Number(campaign.external_id)),
+      listTrafficStarsBanners(accessToken, Number(campaign.external_id)),
+    ]);
   } catch (err) {
     return (
       <div className="space-y-4">
@@ -87,7 +92,10 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
         </p>
       </div>
 
-      <TrafficStarsEditCampaignForm campaignId={campaign.id} detail={detail} />
+      <div className="grid gap-5 lg:grid-cols-2 items-start">
+        <TrafficStarsEditCampaignForm campaignId={campaign.id} detail={detail} />
+        <TrafficStarsCampaignBanners campaignId={campaign.id} initialBanners={banners} />
+      </div>
     </div>
   );
 }

@@ -306,9 +306,12 @@ export function TrafficStarsCreateCampaignForm({
           step="0.01"
           value={maxDaily}
           onChange={(e) => setMaxDaily(e.target.value)}
-          placeholder="Kosongin kalau nggak dibatasi"
+          placeholder="Kosongin biar TrafficStars pakai default mereka"
           className={inputClass}
         />
+        <p className="text-xs text-muted mt-1">
+          TrafficStars nggak punya opsi &quot;tanpa batas&quot; — kalau dikosongin, mereka otomatis kasih nilai default (bisa diubah lagi lewat Edit nanti).
+        </p>
       </div>
 
       <div>

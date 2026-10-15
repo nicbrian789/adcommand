@@ -85,16 +85,17 @@ export function TrafficStarsEditCampaignForm({
           />
         </div>
         <div>
-          <label className="block text-xs text-muted mb-1.5">Budget harian max, $ (opsional)</label>
+          <label className="block text-xs text-muted mb-1.5">Budget harian max ($)</label>
           <input
             type="number"
-            min="0"
+            required
+            min="0.01"
             step="0.01"
             value={maxDaily}
             onChange={(e) => setMaxDaily(e.target.value)}
-            placeholder="Kosongin kalau nggak dibatasi"
             className={inputClass}
           />
+          <p className="text-xs text-muted mt-1">Wajib diisi — TrafficStars nggak punya opsi &quot;tanpa batas&quot; buat budget harian.</p>
         </div>
       </div>
 
