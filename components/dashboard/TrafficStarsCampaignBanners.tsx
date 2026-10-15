@@ -9,6 +9,7 @@ import {
   replaceCampaignBannerImageAction,
   addCampaignBannerAction,
 } from "@/app/dashboard/campaigns/[id]/edit/actions";
+import { FilePreviewThumbnails } from "@/components/dashboard/FilePreviewThumbnails";
 import type { TrafficStarsBanner } from "@/lib/integrations/trafficstars";
 
 const inputClass =
@@ -297,6 +298,7 @@ export function TrafficStarsCampaignBanners({
               onChange={(e) => setImages(e.target.files ? Array.from(e.target.files) : [])}
               className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent file:text-white file:px-3 file:py-1.5 file:text-xs file:font-medium"
             />
+            <FilePreviewThumbnails files={images} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <input

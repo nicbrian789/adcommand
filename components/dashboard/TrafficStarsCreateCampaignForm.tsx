@@ -7,6 +7,7 @@ import {
   createTrafficStarsCampaignAction,
   createTrafficStarsBannerAction,
 } from "@/app/dashboard/networks/[id]/create-campaign/actions";
+import { FilePreviewThumbnails } from "@/components/dashboard/FilePreviewThumbnails";
 import type { TrafficStarsAdFormat } from "@/lib/integrations/trafficstars";
 
 const inputClass =
@@ -166,6 +167,7 @@ export function TrafficStarsCreateCampaignForm({
             {images.length > 0 ? (
               <p className="text-xs text-muted mt-1">{images.length} file dipilih — bakal jadi {images.length} banner terpisah.</p>
             ) : null}
+            <FilePreviewThumbnails files={images} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
