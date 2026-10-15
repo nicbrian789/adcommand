@@ -133,7 +133,11 @@ export type CreateTrafficStarsCampaignInput = {
   pricingModel: "cpm" | "cpc" | "cpa";
   price: number;
   maxDaily?: number;
+  totalBudget?: number;
   countries?: string[];
+  trafficType?: "ron" | "prime" | "members_area";
+  weight?: number;
+  scheduleStartDate?: string;
 };
 
 export async function createTrafficStarsCampaign(
@@ -151,6 +155,16 @@ export async function createTrafficStarsCampaign(
   };
   if (input.maxDaily && input.maxDaily > 0) body.max_daily = input.maxDaily;
   if (input.countries && input.countries.length > 0) body.countries = input.countries;
+  if (input.totalBudget && input.totalBudget > 0) {
+    body.total_budget = input.totalBudget;
+    body.use_total_budget = true;
+  }
+  if (input.trafficType) body.traffic_type = input.trafficType;
+  if (input.weight && input.weight > 0) body.weight = input.weight;
+  if (input.scheduleStartDate) {
+    body.schedule_start_time = `${input.scheduleStartDate} 00:00:00`;
+    body.schedule_timezone = 0;
+  }
 
   const res = await fetch(`${BASE_URL}/v1.1/campaigns`, {
     method: "POST",

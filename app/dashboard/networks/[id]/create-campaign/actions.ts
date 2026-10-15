@@ -18,7 +18,11 @@ export async function createTrafficStarsCampaignAction(
     pricingModel: "cpm" | "cpc" | "cpa";
     price: number;
     maxDaily: number;
+    totalBudget: number;
     countries: string[];
+    trafficType: "ron" | "prime" | "members_area";
+    weight: number;
+    scheduleStartDate: string;
   }
 ): Promise<{ id: number; status: string }> {
   try {
@@ -55,7 +59,11 @@ export async function createTrafficStarsCampaignAction(
       pricingModel: input.pricingModel,
       price: input.price,
       maxDaily: input.maxDaily,
+      totalBudget: input.totalBudget,
       countries: input.countries,
+      trafficType: input.trafficType,
+      weight: input.weight,
+      scheduleStartDate: input.scheduleStartDate,
     });
 
     const campaignId = Number(result?.id);
@@ -94,8 +102,8 @@ export async function createTrafficStarsCampaignAction(
 
 export async function createTrafficStarsBannerAction(
   networkId: string,
-  input: { campaignId: number; landingUrl: string; image: File | null }
-): Promise<{ id: number; uploaded: boolean }> {
+  input: { campaignId: number; landingUrl: string; images: File[] }
+): Promise<{ banners: { id: number; uploaded: boolean }[] }> {
   try {
     const supabase = await createClient();
     const {
@@ -120,24 +128,34 @@ export async function createTrafficStarsBannerAction(
     if (keyError || !apiKey) throw new Error(keyError?.message ?? "API key belum tersimpan.");
 
     const accessToken = await getTrafficStarsAccessToken(apiKey);
+    const validImages = input.images.filter((f) => f && f.size > 0);
 
-    const banner = await createTrafficStarsBanner(accessToken, {
-      campaignId: input.campaignId,
-      landingUrl: input.landingUrl.trim(),
-    });
+    // Minimal 1 banner dibuat (tanpa gambar kalau nggak ada file sama sekali),
+    // atau 1 banner per gambar kalau user upload beberapa sekaligus.
+    const rounds = validImages.length > 0 ? validImages : [null];
+    const banners: { id: number; uploaded: boolean }[] = [];
 
-    const bannerId = Number(banner?.id);
-    if (!Number.isFinite(bannerId)) {
-      throw new Error(`Respons banner TrafficStars tidak terduga: ${JSON.stringify(banner).slice(0, 400)}`);
+    for (const file of rounds) {
+      const banner = await createTrafficStarsBanner(accessToken, {
+        campaignId: input.campaignId,
+        landingUrl: input.landingUrl.trim(),
+      });
+
+      const bannerId = Number(banner?.id);
+      if (!Number.isFinite(bannerId)) {
+        throw new Error(`Respons banner TrafficStars tidak terduga: ${JSON.stringify(banner).slice(0, 400)}`);
+      }
+
+      let uploaded = false;
+      if (file) {
+        await uploadTrafficStarsBannerImage(accessToken, bannerId, file);
+        uploaded = true;
+      }
+
+      banners.push({ id: bannerId, uploaded });
     }
 
-    let uploaded = false;
-    if (input.image && input.image.size > 0) {
-      await uploadTrafficStarsBannerImage(accessToken, bannerId, input.image);
-      uploaded = true;
-    }
-
-    return { id: bannerId, uploaded };
+    return { banners };
   } catch (err) {
     console.error("createTrafficStarsBannerAction error:", err);
     const message = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga saat bikin banner.";

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, CheckCircle2, Upload } from "lucide-react";
+import { Loader2, CheckCircle2, Upload, ChevronDown } from "lucide-react";
 import {
   createTrafficStarsCampaignAction,
   createTrafficStarsBannerAction,
@@ -28,15 +28,20 @@ export function TrafficStarsCreateCampaignForm({
   const [price, setPrice] = useState("");
   const [maxDaily, setMaxDaily] = useState("");
   const [countries, setCountries] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [totalBudget, setTotalBudget] = useState("");
+  const [trafficType, setTrafficType] = useState<"ron" | "prime" | "members_area">("ron");
+  const [weight, setWeight] = useState("");
+  const [scheduleStartDate, setScheduleStartDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ id: number; status: string } | null>(null);
 
   const [landingUrl, setLandingUrl] = useState("");
-  const [image, setImage] = useState<File | null>(null);
+  const [images, setImages] = useState<File[]>([]);
   const [bannerLoading, setBannerLoading] = useState(false);
   const [bannerError, setBannerError] = useState<string | null>(null);
-  const [bannerDone, setBannerDone] = useState<{ id: number; uploaded: boolean } | null>(null);
+  const [bannerDone, setBannerDone] = useState<{ banners: { id: number; uploaded: boolean }[] } | null>(null);
 
   function changeFormat(id: number) {
     setFormatId(id);
@@ -57,10 +62,14 @@ export function TrafficStarsCreateCampaignForm({
         pricingModel,
         price: Number(price),
         maxDaily: maxDaily ? Number(maxDaily) : 0,
+        totalBudget: totalBudget ? Number(totalBudget) : 0,
         countries: countries
           .split(",")
           .map((c) => c.trim().toUpperCase())
           .filter(Boolean),
+        trafficType,
+        weight: weight ? Number(weight) : 0,
+        scheduleStartDate,
       });
       setSuccess(result);
     } catch (err) {
@@ -80,7 +89,7 @@ export function TrafficStarsCreateCampaignForm({
       const result = await createTrafficStarsBannerAction(networkId, {
         campaignId: success.id,
         landingUrl,
-        image,
+        images,
       });
       setBannerDone(result);
     } catch (err) {
@@ -96,8 +105,8 @@ export function TrafficStarsCreateCampaignForm({
         <CheckCircle2 className="text-success" size={28} />
         <p className="font-medium">Campaign & banner berhasil dibuat di TrafficStars</p>
         <p className="text-sm text-muted">
-          ID campaign: {success.id} · ID banner: {bannerDone.id}
-          {bannerDone.uploaded ? " · Gambar ke-upload" : " · Gambar belum diupload"}
+          ID campaign: {success.id} · {bannerDone.banners.length} banner dibuat
+          {" "}({bannerDone.banners.filter((b) => b.uploaded).length} ada gambar)
         </p>
         <p className="text-xs text-muted mt-1">
           Status awal: {success.status}, nunggu review/approval dari TrafficStars sebelum tayang.
@@ -136,13 +145,19 @@ export function TrafficStarsCreateCampaignForm({
           </div>
 
           <div>
-            <label className="block text-xs text-muted mb-1.5">Gambar banner (opsional buat tes, wajib biar iklan bisa tayang)</label>
+            <label className="block text-xs text-muted mb-1.5">
+              Gambar banner — boleh pilih lebih dari 1 sekaligus buat rotasi/A-B test (opsional buat tes, wajib biar iklan bisa tayang)
+            </label>
             <input
               type="file"
               accept="image/*"
-              onChange={(e) => setImage(e.target.files?.[0] ?? null)}
+              multiple
+              onChange={(e) => setImages(e.target.files ? Array.from(e.target.files) : [])}
               className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent file:text-white file:px-3 file:py-1.5 file:text-xs file:font-medium"
             />
+            {images.length > 0 ? (
+              <p className="text-xs text-muted mt-1">{images.length} gambar dipilih — bakal jadi {images.length} banner terpisah.</p>
+            ) : null}
           </div>
 
           {bannerError ? (
@@ -251,6 +266,72 @@ export function TrafficStarsCreateCampaignForm({
           className={inputClass}
         />
       </div>
+
+      <button
+        type="button"
+        onClick={() => setShowAdvanced((v) => !v)}
+        className="flex items-center gap-1.5 text-xs text-accent"
+      >
+        <ChevronDown size={14} className={showAdvanced ? "rotate-180 transition-transform" : "transition-transform"} />
+        Pengaturan lanjutan
+      </button>
+
+      {showAdvanced ? (
+        <div className="space-y-4 rounded-lg border border-border/60 p-4 bg-surface-2/40">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-muted mb-1.5">Budget total, $ (opsional)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={totalBudget}
+                onChange={(e) => setTotalBudget(e.target.value)}
+                placeholder="Kosongin kalau nggak dibatasi"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted mb-1.5">Weight/prioritas (opsional)</label>
+              <input
+                type="number"
+                min="0"
+                value={weight}
+                onChange={(e) => setWeight(e.target.value)}
+                placeholder="Default"
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-muted mb-1.5">Tipe traffic</label>
+              <select
+                value={trafficType}
+                onChange={(e) => setTrafficType(e.target.value as "ron" | "prime" | "members_area")}
+                className={inputClass}
+              >
+                <option value="ron">RON (semua traffic)</option>
+                <option value="prime">Prime</option>
+                <option value="members_area">Members Area</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-muted mb-1.5">Mulai tanggal (opsional)</label>
+              <input
+                type="date"
+                value={scheduleStartDate}
+                onChange={(e) => setScheduleStartDate(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted">
+            Targeting device/OS/browser spesifik belum ada di sini — bisa diatur manual lewat website TrafficStars kalau perlu.
+          </p>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger whitespace-pre-wrap">{error}</div>
