@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getTrafficStarsAccessToken, createTrafficStarsCampaign } from "@/lib/integrations/trafficstars";
+import {
+  getTrafficStarsAccessToken,
+  createTrafficStarsCampaign,
+  createTrafficStarsBanner,
+  uploadTrafficStarsBannerImage,
+} from "@/lib/integrations/trafficstars";
 
 export async function createTrafficStarsCampaignAction(
   networkId: string,
@@ -83,6 +88,59 @@ export async function createTrafficStarsCampaignAction(
   } catch (err) {
     console.error("createTrafficStarsCampaignAction error:", err);
     const message = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga saat bikin campaign.";
+    throw new Error(message);
+  }
+}
+
+export async function createTrafficStarsBannerAction(
+  networkId: string,
+  input: { campaignId: number; landingUrl: string; image: File | null }
+): Promise<{ id: number; uploaded: boolean }> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Sesi kamu sudah habis. Silakan masuk lagi.");
+
+    if (!input.landingUrl.trim() || !/^https?:\/\//i.test(input.landingUrl.trim())) {
+      throw new Error("Landing URL wajib diisi, diawali http:// atau https://");
+    }
+
+    const { data: network } = await supabase
+      .from("ad_networks")
+      .select("id, provider")
+      .eq("id", networkId)
+      .maybeSingle();
+    if (!network || network.provider !== "trafficstars") throw new Error("Network tidak ditemukan.");
+
+    const { data: apiKey, error: keyError } = await supabase.rpc("get_network_api_key", {
+      p_network_id: networkId,
+    });
+    if (keyError || !apiKey) throw new Error(keyError?.message ?? "API key belum tersimpan.");
+
+    const accessToken = await getTrafficStarsAccessToken(apiKey);
+
+    const banner = await createTrafficStarsBanner(accessToken, {
+      campaignId: input.campaignId,
+      landingUrl: input.landingUrl.trim(),
+    });
+
+    const bannerId = Number(banner?.id);
+    if (!Number.isFinite(bannerId)) {
+      throw new Error(`Respons banner TrafficStars tidak terduga: ${JSON.stringify(banner).slice(0, 400)}`);
+    }
+
+    let uploaded = false;
+    if (input.image && input.image.size > 0) {
+      await uploadTrafficStarsBannerImage(accessToken, bannerId, input.image);
+      uploaded = true;
+    }
+
+    return { id: bannerId, uploaded };
+  } catch (err) {
+    console.error("createTrafficStarsBannerAction error:", err);
+    const message = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga saat bikin banner.";
     throw new Error(message);
   }
 }

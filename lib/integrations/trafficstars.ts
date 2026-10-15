@@ -166,6 +166,45 @@ export async function createTrafficStarsCampaign(
   return res.json();
 }
 
+export async function createTrafficStarsBanner(
+  accessToken: string,
+  input: { campaignId: number; landingUrl: string }
+): Promise<{ id: number }> {
+  const res = await fetch(`${BASE_URL}/v1.1/banners`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      campaign_id: input.campaignId,
+      urls: [{ url: input.landingUrl }],
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Gagal bikin banner TrafficStars (${res.status}): ${text.slice(0, 400)}`);
+  }
+
+  return res.json();
+}
+
+export async function uploadTrafficStarsBannerImage(accessToken: string, bannerId: number, file: File): Promise<unknown> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+
+  const res = await fetch(`${BASE_URL}/v1.1/banners/${bannerId}/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Gagal upload gambar banner (${res.status}): ${text.slice(0, 400)}`);
+  }
+
+  return res.json();
+}
+
 export async function getTrafficStarsDailyStats(
   accessToken: string,
   campaignId: number,

@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, CheckCircle2 } from "lucide-react";
-import { createTrafficStarsCampaignAction } from "@/app/dashboard/networks/[id]/create-campaign/actions";
+import { Loader2, CheckCircle2, Upload } from "lucide-react";
+import {
+  createTrafficStarsCampaignAction,
+  createTrafficStarsBannerAction,
+} from "@/app/dashboard/networks/[id]/create-campaign/actions";
 import type { TrafficStarsAdFormat } from "@/lib/integrations/trafficstars";
 
 const inputClass =
@@ -28,6 +31,12 @@ export function TrafficStarsCreateCampaignForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ id: number; status: string } | null>(null);
+
+  const [landingUrl, setLandingUrl] = useState("");
+  const [image, setImage] = useState<File | null>(null);
+  const [bannerLoading, setBannerLoading] = useState(false);
+  const [bannerError, setBannerError] = useState<string | null>(null);
+  const [bannerDone, setBannerDone] = useState<{ id: number; uploaded: boolean } | null>(null);
 
   function changeFormat(id: number) {
     setFormatId(id);
@@ -61,16 +70,37 @@ export function TrafficStarsCreateCampaignForm({
     }
   }
 
-  if (success) {
+  async function handleBannerSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!success) return;
+    setBannerLoading(true);
+    setBannerError(null);
+
+    try {
+      const result = await createTrafficStarsBannerAction(networkId, {
+        campaignId: success.id,
+        landingUrl,
+        image,
+      });
+      setBannerDone(result);
+    } catch (err) {
+      setBannerError(err instanceof Error ? err.message : "Gagal bikin banner.");
+    } finally {
+      setBannerLoading(false);
+    }
+  }
+
+  if (success && bannerDone) {
     return (
       <div className="rounded-xl border border-success/30 bg-success/10 p-6 flex flex-col items-center text-center gap-2">
         <CheckCircle2 className="text-success" size={28} />
-        <p className="font-medium">Campaign berhasil dibuat di TrafficStars</p>
+        <p className="font-medium">Campaign & banner berhasil dibuat di TrafficStars</p>
         <p className="text-sm text-muted">
-          ID campaign: {success.id} · Status: {success.status}
+          ID campaign: {success.id} · ID banner: {bannerDone.id}
+          {bannerDone.uploaded ? " · Gambar ke-upload" : " · Gambar belum diupload"}
         </p>
         <p className="text-xs text-muted mt-1">
-          Materi iklan (gambar/video) belum ke-upload — lanjutin dari website TrafficStars langsung buat nambahin creative.
+          Status awal: {success.status}, nunggu review/approval dari TrafficStars sebelum tayang.
         </p>
         <button
           onClick={() => router.push("/dashboard/networks")}
@@ -78,6 +108,56 @@ export function TrafficStarsCreateCampaignForm({
         >
           Kembali ke Networks
         </button>
+      </div>
+    );
+  }
+
+  if (success) {
+    return (
+      <div className="space-y-4 max-w-lg">
+        <div className="rounded-xl border border-success/30 bg-success/10 p-4 flex items-center gap-3">
+          <CheckCircle2 className="text-success shrink-0" size={20} />
+          <p className="text-sm">
+            Campaign dibuat (ID {success.id}, status {success.status}). Lanjut isi landing URL & upload creative-nya.
+          </p>
+        </div>
+
+        <form onSubmit={handleBannerSubmit} className="rounded-xl border border-border bg-surface p-6 space-y-4">
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Landing URL</label>
+            <input
+              type="text"
+              required
+              value={landingUrl}
+              onChange={(e) => setLandingUrl(e.target.value)}
+              placeholder="https://domain-kamu.com/offer"
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Gambar banner (opsional buat tes, wajib biar iklan bisa tayang)</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setImage(e.target.files?.[0] ?? null)}
+              className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent file:text-white file:px-3 file:py-1.5 file:text-xs file:font-medium"
+            />
+          </div>
+
+          {bannerError ? (
+            <div className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger whitespace-pre-wrap">{bannerError}</div>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={bannerLoading}
+            className="flex items-center gap-2 rounded-lg bg-accent text-white text-sm font-medium px-4 py-2.5 hover:bg-accent/90 disabled:opacity-60"
+          >
+            {bannerLoading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+            Buat Banner
+          </button>
+        </form>
       </div>
     );
   }
