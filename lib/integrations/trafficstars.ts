@@ -143,6 +143,7 @@ export async function createTrafficStarsCampaign(
   const body: Record<string, unknown> = {
     name: input.name,
     format_id: input.formatId,
+    type: input.adType,
     ad_type: input.adType,
     pricing_model: input.pricingModel,
     price: input.price,
