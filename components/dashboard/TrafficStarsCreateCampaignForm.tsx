@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, CheckCircle2, Upload, ChevronDown } from "lucide-react";
+import { Loader2, CheckCircle2, Upload } from "lucide-react";
 import {
   createTrafficStarsCampaignAction,
   createTrafficStarsBannerAction,
@@ -29,7 +29,6 @@ export function TrafficStarsCreateCampaignForm({
   const [price, setPrice] = useState("");
   const [maxDaily, setMaxDaily] = useState("");
   const [countries, setCountries] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [totalBudget, setTotalBudget] = useState("");
   const [trafficType, setTrafficType] = useState<"ron" | "prime" | "members_area">("ron");
   const [weight, setWeight] = useState("");
@@ -305,19 +304,67 @@ export function TrafficStarsCreateCampaignForm({
       </div>
 
       <div>
-        <label className="block text-xs text-muted mb-1.5">Budget harian max, $ (opsional)</label>
+        <label className="block text-xs text-muted mb-1.5">Budget harian max ($)</label>
         <input
           type="number"
-          min="0"
+          required
+          min="0.01"
           step="0.01"
           value={maxDaily}
           onChange={(e) => setMaxDaily(e.target.value)}
-          placeholder="Kosongin biar TrafficStars pakai default mereka"
           className={inputClass}
         />
-        <p className="text-xs text-muted mt-1">
-          TrafficStars nggak punya opsi &quot;tanpa batas&quot; — kalau dikosongin, mereka otomatis kasih nilai default (bisa diubah lagi lewat Edit nanti).
-        </p>
+        <p className="text-xs text-muted mt-1">Wajib diisi — TrafficStars nggak punya opsi &quot;tanpa batas&quot; buat budget harian.</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-muted mb-1.5">Budget total, $ (opsional)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={totalBudget}
+            onChange={(e) => setTotalBudget(e.target.value)}
+            placeholder="Kosongin kalau nggak dibatasi"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-muted mb-1.5">Weight/prioritas (opsional)</label>
+          <input
+            type="number"
+            min="0"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            placeholder="Default"
+            className={inputClass}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-muted mb-1.5">Tipe traffic</label>
+          <select
+            value={trafficType}
+            onChange={(e) => setTrafficType(e.target.value as "ron" | "prime" | "members_area")}
+            className={inputClass}
+          >
+            <option value="ron">RON (semua traffic)</option>
+            <option value="prime">Prime</option>
+            <option value="members_area">Members Area</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-muted mb-1.5">Mulai tanggal (opsional)</label>
+          <input
+            type="date"
+            value={scheduleStartDate}
+            onChange={(e) => setScheduleStartDate(e.target.value)}
+            className={inputClass}
+          />
+        </div>
       </div>
 
       <div>
@@ -331,71 +378,9 @@ export function TrafficStarsCreateCampaignForm({
         />
       </div>
 
-      <button
-        type="button"
-        onClick={() => setShowAdvanced((v) => !v)}
-        className="flex items-center gap-1.5 text-xs text-accent"
-      >
-        <ChevronDown size={14} className={showAdvanced ? "rotate-180 transition-transform" : "transition-transform"} />
-        Pengaturan lanjutan
-      </button>
-
-      {showAdvanced ? (
-        <div className="space-y-4 rounded-lg border border-border/60 p-4 bg-surface-2/40">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-muted mb-1.5">Budget total, $ (opsional)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={totalBudget}
-                onChange={(e) => setTotalBudget(e.target.value)}
-                placeholder="Kosongin kalau nggak dibatasi"
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-muted mb-1.5">Weight/prioritas (opsional)</label>
-              <input
-                type="number"
-                min="0"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-                placeholder="Default"
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-muted mb-1.5">Tipe traffic</label>
-              <select
-                value={trafficType}
-                onChange={(e) => setTrafficType(e.target.value as "ron" | "prime" | "members_area")}
-                className={inputClass}
-              >
-                <option value="ron">RON (semua traffic)</option>
-                <option value="prime">Prime</option>
-                <option value="members_area">Members Area</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-muted mb-1.5">Mulai tanggal (opsional)</label>
-              <input
-                type="date"
-                value={scheduleStartDate}
-                onChange={(e) => setScheduleStartDate(e.target.value)}
-                className={inputClass}
-              />
-            </div>
-          </div>
-          <p className="text-xs text-muted">
-            Targeting device/OS/browser spesifik belum ada di sini — bisa diatur manual lewat website TrafficStars kalau perlu.
-          </p>
-        </div>
-      ) : null}
+      <p className="text-xs text-muted">
+        Targeting device/OS/browser spesifik belum ada di sini — bisa diatur manual lewat website TrafficStars kalau perlu.
+      </p>
 
       {error ? (
         <div className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger whitespace-pre-wrap">{error}</div>
