@@ -40,7 +40,9 @@ function BannerRow({ campaignId, banner }: { campaignId: string; banner: Traffic
 
   const hasCreative = Boolean(banner.image || banner.video || banner.content);
   const [imageFailed, setImageFailed] = useState(false);
+  const [videoFailed, setVideoFailed] = useState(false);
   const imageUrl = banner.image ? `${TRAFFICSTARS_IMAGE_BASE_URL}${banner.image}` : null;
+  const videoUrl = banner.video ? `${TRAFFICSTARS_IMAGE_BASE_URL}${banner.video}` : null;
 
   async function handleSave() {
     setSaving(true);
@@ -101,6 +103,13 @@ function BannerRow({ campaignId, banner }: { campaignId: string; banner: Traffic
               src={imageUrl}
               alt="Preview creative"
               onError={() => setImageFailed(true)}
+              className="h-9 w-auto max-w-[72px] rounded border border-border/60 object-contain bg-background"
+            />
+          ) : videoUrl && !videoFailed ? (
+            <video
+              src={videoUrl}
+              muted
+              onError={() => setVideoFailed(true)}
               className="h-9 w-auto max-w-[72px] rounded border border-border/60 object-contain bg-background"
             />
           ) : hasCreative ? (
