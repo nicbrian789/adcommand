@@ -14,6 +14,8 @@ import type { TrafficStarsBanner } from "@/lib/integrations/trafficstars";
 const inputClass =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent";
 
+const TRAFFICSTARS_IMAGE_BASE_URL = "https://admin.trafficstars.com/media/images/";
+
 const bannerStatusStyle: Record<string, string> = {
   running: "bg-success/15 text-success",
   paused: "bg-warning/15 text-warning",
@@ -36,6 +38,8 @@ function BannerRow({ campaignId, banner }: { campaignId: string; banner: Traffic
   const [error, setError] = useState<string | null>(null);
 
   const hasCreative = Boolean(banner.image || banner.video || banner.content);
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = banner.image ? `${TRAFFICSTARS_IMAGE_BASE_URL}${banner.image}` : null;
 
   async function handleSave() {
     setSaving(true);
@@ -90,7 +94,15 @@ function BannerRow({ campaignId, banner }: { campaignId: string; banner: Traffic
     <div className="rounded-lg border border-border/60 p-3 space-y-2">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 text-xs text-muted">
-          {hasCreative ? (
+          {imageUrl && !imageFailed ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imageUrl}
+              alt="Preview creative"
+              onError={() => setImageFailed(true)}
+              className="h-9 w-auto max-w-[72px] rounded border border-border/60 object-contain bg-background"
+            />
+          ) : hasCreative ? (
             <span className="text-foreground">Ada creative terpasang</span>
           ) : (
             <span className="flex items-center gap-1 text-warning">
