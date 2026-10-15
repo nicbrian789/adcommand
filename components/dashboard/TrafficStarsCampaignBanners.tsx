@@ -14,7 +14,7 @@ import type { TrafficStarsBanner } from "@/lib/integrations/trafficstars";
 const inputClass =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent";
 
-const TRAFFICSTARS_IMAGE_BASE_URL = "https://admin.trafficstars.com/media/images/";
+const TRAFFICSTARS_IMAGE_BASE_URL = "https://admin.trafficstars.com/media/";
 
 const bannerStatusStyle: Record<string, string> = {
   running: "bg-success/15 text-success",

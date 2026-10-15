@@ -71,7 +71,6 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
       getTrafficStarsCampaign(accessToken, Number(campaign.external_id)),
       listTrafficStarsBanners(accessToken, Number(campaign.external_id)),
     ]);
-    console.error("DEBUG banners raw:", JSON.stringify(banners));
   } catch (err) {
     return (
       <div className="space-y-4">
