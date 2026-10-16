@@ -69,11 +69,6 @@ export default async function AlertsPage() {
   const rows: AlertRow[] = alerts ?? [];
   const unreadCount = rows.filter((r) => !r.read).length;
 
-  const unreadIds = rows.filter((r) => !r.read).map((r) => r.id);
-  if (unreadIds.length > 0) {
-    await supabase.from("alerts").update({ read: true }).in("id", unreadIds);
-  }
-
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">

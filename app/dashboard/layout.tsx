@@ -11,35 +11,44 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (isSupabaseConfigured) {
     const supabase = await createClient();
 
-    const [
-      {
-        data: { user },
-      },
-      { data: statRows },
-    ] = await Promise.all([
-      supabase.auth.getUser(),
-      supabase.from("campaign_stats").select("campaign_id"),
-    ]);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    const statCampaignIds = [...new Set((statRows ?? []).map((s) => s.campaign_id))];
+    const { data: workspace } = await supabase
+      .from("workspaces")
+      .select("id")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-    const [{ data: rows }, { data: campaigns }, { count }, { data: myMembership }] = await Promise.all([
-      user
-        ? supabase.from("ad_networks").select("id, name").eq("user_id", user.id).order("name", { ascending: true })
-        : Promise.resolve({ data: [] as { id: string; name: string }[] }),
-      statCampaignIds.length
-        ? supabase.from("campaigns").select("id, network_id").in("id", statCampaignIds)
-        : Promise.resolve({ data: [] as { id: string; network_id: string }[] }),
-      supabase.from("alerts").select("id", { count: "exact", head: true }).eq("read", false),
-      user
-        ? supabase.from("workspace_members").select("role").eq("user_id", user.id).maybeSingle()
-        : Promise.resolve({ data: null as { role: string } | null }),
-    ]);
+    if (user && workspace) {
+      const [{ data: rows }, { data: campaigns }, { count }, { data: myMembership }] = await Promise.all([
+        supabase
+          .from("ad_networks")
+          .select("id, name")
+          .eq("workspace_id", workspace.id)
+          .eq("user_id", user.id)
+          .order("name", { ascending: true }),
+        supabase.from("campaigns").select("id, network_id").eq("workspace_id", workspace.id),
+        supabase
+          .from("alerts")
+          .select("id", { count: "exact", head: true })
+          .eq("workspace_id", workspace.id)
+          .eq("read", false),
+        supabase
+          .from("workspace_members")
+          .select("role")
+          .eq("workspace_id", workspace.id)
+          .eq("user_id", user.id)
+          .maybeSingle(),
+      ]);
 
-    const syncedIds = new Set((campaigns ?? []).map((c) => c.network_id));
-    networks = (rows ?? []).map((n) => ({ id: n.id, name: n.name, synced: syncedIds.has(n.id) }));
-    unreadAlerts = count ?? 0;
-    isOwner = myMembership?.role === "Owner";
+      const syncedIds = new Set((campaigns ?? []).map((c) => c.network_id));
+      networks = (rows ?? []).map((n) => ({ id: n.id, name: n.name, synced: syncedIds.has(n.id) }));
+      unreadAlerts = count ?? 0;
+      isOwner = myMembership?.role === "Owner";
+    }
   }
 
   return (

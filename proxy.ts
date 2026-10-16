@@ -7,10 +7,15 @@ const NEUTRAL_PATHS = ["/auth/callback", "/reset-password"];
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
+  const pathname = request.nextUrl.pathname;
 
-  // Supabase credentials not set yet (see .env.local.example) — skip auth
-  // gating entirely so the dashboard preview keeps working with sample data.
+  // Local preview only: allow opening the app without Supabase env.
+  // In production / Vercel, never skip auth gating — misconfigured env must not expose /dashboard.
   if (!isSupabaseConfigured) {
+    const isProd = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+    if (isProd && pathname.startsWith("/dashboard")) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
     return response;
   }
 
@@ -33,7 +38,6 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const pathname = request.nextUrl.pathname;
   const isGuestOnly = GUEST_ONLY_PATHS.some((path) => pathname.startsWith(path));
   const isNeutral = NEUTRAL_PATHS.some((path) => pathname.startsWith(path));
 
