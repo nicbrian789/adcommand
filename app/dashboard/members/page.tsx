@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { InviteMemberForm } from "@/components/dashboard/InviteMemberForm";
 import { RemoveMemberButton } from "@/components/dashboard/RemoveMemberButton";
+import { PromoteOwnerButton } from "@/components/dashboard/PromoteOwnerButton";
 import { SeedNetworksButton } from "@/components/dashboard/SeedNetworksButton";
 import { Users, AlertTriangle } from "lucide-react";
 
@@ -147,6 +148,7 @@ export default async function MembersPage() {
                         {m.role !== "Owner" ? (
                           <>
                             <SeedNetworksButton userId={m.user_id} />
+                            <PromoteOwnerButton userId={m.user_id} name={m.full_name || m.email} />
                             <RemoveMemberButton userId={m.user_id} name={m.full_name || m.email} />
                           </>
                         ) : null}

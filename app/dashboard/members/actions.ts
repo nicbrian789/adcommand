@@ -102,6 +102,41 @@ export async function addDefaultNetworksForMember(targetUserId: string) {
   return { added };
 }
 
+export async function promoteToOwner(targetUserId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sesi kamu sudah habis. Silakan masuk lagi.");
+
+  const { data: workspace } = await supabase
+    .from("workspaces")
+    .select("id")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!workspace) throw new Error("Belum ada workspace.");
+
+  const { data: membership } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspace.id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (membership?.role !== "Owner") throw new Error("Cuma Owner yang bisa jadiin orang lain Owner.");
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("workspace_members")
+    .update({ role: "Owner" })
+    .eq("workspace_id", workspace.id)
+    .eq("user_id", targetUserId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/dashboard/members");
+  revalidatePath("/dashboard");
+}
+
 export async function removeMember(targetUserId: string) {
   const supabase = await createClient();
   const {
