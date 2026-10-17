@@ -7,6 +7,7 @@ import { NetworkActions } from "@/components/dashboard/NetworkActions";
 import { SyncNetworkButton } from "@/components/dashboard/SyncNetworkButton";
 import { NetworkLinkButton } from "@/components/dashboard/NetworkLinkButton";
 import { isSyncSupported, isCreateCampaignSupported } from "@/lib/networks";
+import { colorForMember } from "@/lib/memberColors";
 
 type NetworkRow = {
   id: string;
@@ -42,20 +43,24 @@ export function NetworksByMember({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        {groups.map((g) => (
-          <button
-            key={g.userId}
-            onClick={() => setActiveId(g.userId)}
-            className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm border ${
-              activeId === g.userId
-                ? "border-accent bg-accent/15 text-foreground"
-                : "border-border text-muted hover:text-foreground"
-            }`}
-          >
-            {g.name}
-            <span className="text-xs text-muted">{g.rows.length}</span>
-          </button>
-        ))}
+        {groups.map((g) => {
+          const color = colorForMember(g.userId);
+          const active = activeId === g.userId;
+          return (
+            <button
+              key={g.userId}
+              onClick={() => setActiveId(g.userId)}
+              className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm border ${
+                active ? "bg-accent/15 text-foreground" : "text-muted hover:text-foreground"
+              }`}
+              style={{ borderColor: active ? "var(--accent)" : `${color}55` }}
+            >
+              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+              {g.name}
+              <span className="text-xs text-muted">{g.rows.length}</span>
+            </button>
+          );
+        })}
       </div>
 
       {active ? (
