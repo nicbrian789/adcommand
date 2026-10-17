@@ -17,8 +17,11 @@ export function SeedNetworksButton({ userId }: { userId: string }) {
     setMessage(null);
 
     try {
-      const { added } = await addDefaultNetworksForMember(userId);
-      setMessage(added > 0 ? `${added} network ditambahin.` : "Udah lengkap semua.");
+      const { added, linked } = await addDefaultNetworksForMember(userId);
+      const parts: string[] = [];
+      if (added > 0) parts.push(`${added} network ditambahin`);
+      if (linked > 0) parts.push(`${linked} link ke-copy dari Owner`);
+      setMessage(parts.length > 0 ? parts.join(", ") + "." : "Udah lengkap semua.");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal.");

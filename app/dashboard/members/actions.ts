@@ -15,17 +15,51 @@ async function seedDefaultNetworks(admin: SupabaseClient, workspaceId: string, u
     .eq("workspace_id", workspaceId);
   const existingProviders = new Set((existing ?? []).map((n) => n.provider));
 
+  const { data: owners } = await admin.from("workspace_members").select("user_id").eq("workspace_id", workspaceId).eq("role", "Owner");
+  const ownerIds = (owners ?? []).map((o) => o.user_id);
+
+  const linkByProvider = new Map<string, string>();
+  if (ownerIds.length > 0) {
+    const { data: ownerLinks } = await admin
+      .from("ad_networks")
+      .select("provider, external_url")
+      .eq("workspace_id", workspaceId)
+      .in("user_id", ownerIds)
+      .not("external_url", "is", null);
+    for (const row of ownerLinks ?? []) {
+      if (row.provider && row.external_url && !linkByProvider.has(row.provider)) {
+        linkByProvider.set(row.provider, row.external_url);
+      }
+    }
+  }
+
   const missing = NETWORK_TYPES.filter((t) => t.value !== "other" && !existingProviders.has(t.value)).map((t) => ({
     workspace_id: workspaceId,
     user_id: userId,
     name: t.label,
     provider: t.value,
     enabled: true,
+    external_url: linkByProvider.get(t.value) ?? null,
   }));
 
-  if (missing.length === 0) return 0;
-  await admin.from("ad_networks").insert(missing);
-  return missing.length;
+  if (missing.length > 0) {
+    await admin.from("ad_networks").insert(missing);
+  }
+
+  let linked = 0;
+  for (const [provider, url] of linkByProvider) {
+    const { data: updated } = await admin
+      .from("ad_networks")
+      .update({ external_url: url })
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .eq("provider", provider)
+      .is("external_url", null)
+      .select("id");
+    linked += updated?.length ?? 0;
+  }
+
+  return { added: missing.length, linked };
 }
 
 async function ensureWorkspaceMember(
@@ -148,12 +182,12 @@ export async function addDefaultNetworksForMember(targetUserId: string) {
     .maybeSingle();
   if (!targetMembership) throw new Error("User ini bukan anggota workspace.");
 
-  const added = await seedDefaultNetworks(admin, workspace.id, targetUserId);
+  const { added, linked } = await seedDefaultNetworks(admin, workspace.id, targetUserId);
 
   revalidatePath("/dashboard/networks");
   revalidatePath("/dashboard/members");
 
-  return { added };
+  return { added, linked };
 }
 
 export async function promoteToOwner(targetUserId: string) {
