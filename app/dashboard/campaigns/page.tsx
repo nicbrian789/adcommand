@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { AddCampaignForm } from "@/components/dashboard/AddCampaignForm";
 import { DateRangeFilter } from "@/components/dashboard/DateRangeFilter";
+import { MemberFilterTabs } from "@/components/dashboard/MemberFilterTabs";
 import { CampaignPauseButton } from "@/components/dashboard/CampaignPauseButton";
 import { resolveDateRange } from "@/lib/dateRange";
 import { Megaphone, AlertTriangle, Pencil } from "lucide-react";
@@ -35,17 +36,28 @@ const statusStyle: Record<string, string> = {
 const money = (n: number) => `$${n.toFixed(2)}`;
 const count = (n: number) => n.toLocaleString("id-ID");
 
-async function getCampaignsData(range: { from: string; to: string }): Promise<
+async function getCampaignsData(
+  range: { from: string; to: string },
+  memberParam: string | undefined
+): Promise<
   | {
       workspaceId: string;
       workspaceName: string;
-      networks: { id: string; name: string; provider: string | null }[];
+      isOwner: boolean;
+      selectedMember: string | null;
+      members: { id: string; label: string; count: number }[];
+      networks: { id: string; name: string; provider: string | null; user_id: string }[];
       campaigns: CampaignRow[];
       totals: Record<string, CampaignTotals>;
     }
   | { error: string }
 > {
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sesi kamu sudah habis. Silakan masuk lagi." };
 
   const { data: workspace, error: workspaceError } = await supabase
     .from("workspaces")
@@ -56,15 +68,23 @@ async function getCampaignsData(range: { from: string; to: string }): Promise<
 
   if (workspaceError) return { error: workspaceError.message };
   if (!workspace) {
-    return { workspaceId: "", workspaceName: "", networks: [], campaigns: [], totals: {} };
+    return { workspaceId: "", workspaceName: "", isOwner: false, selectedMember: null, members: [], networks: [], campaigns: [], totals: {} };
   }
 
   const [
+    { data: myMembership },
+    { data: workspaceMembers },
     { data: networks, error: networksError },
     { data: campaigns, error: campaignsError },
     { data: stats, error: statsError },
   ] = await Promise.all([
-    supabase.from("ad_networks").select("id, name, provider").eq("workspace_id", workspace.id).order("name", { ascending: true }),
+    supabase.from("workspace_members").select("role").eq("workspace_id", workspace.id).eq("user_id", user.id).maybeSingle(),
+    supabase.from("workspace_members").select("user_id").eq("workspace_id", workspace.id),
+    supabase
+      .from("ad_networks")
+      .select("id, name, provider, user_id")
+      .eq("workspace_id", workspace.id)
+      .order("name", { ascending: true }),
     supabase
       .from("campaigns")
       .select("id, name, status, created_at, network_id, external_id")
@@ -83,6 +103,27 @@ async function getCampaignsData(range: { from: string; to: string }): Promise<
   if (campaignsError) return { error: campaignsError.message };
   if (statsError) return { error: statsError.message };
 
+  const isOwner = myMembership?.role === "Owner";
+
+  const memberIds = (workspaceMembers ?? []).map((m) => m.user_id);
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, email, full_name")
+    .in("id", memberIds.length > 0 ? memberIds : ["00000000-0000-0000-0000-000000000000"]);
+  const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+  const nameOf = (id: string) => {
+    const p = profileMap.get(id);
+    return p?.full_name || p?.email || "(tanpa nama)";
+  };
+
+  const selectedMember =
+    isOwner && memberParam && memberParam !== "all" && memberIds.includes(memberParam) ? memberParam : !isOwner ? user.id : null;
+
+  const allNetworks = networks ?? [];
+  const visibleNetworks = selectedMember ? allNetworks.filter((n) => n.user_id === selectedMember) : allNetworks;
+  const visibleNetworkIds = new Set(visibleNetworks.map((n) => n.id));
+  const visibleCampaigns = (campaigns ?? []).filter((c) => visibleNetworkIds.has(c.network_id));
+
   const totals: Record<string, CampaignTotals> = {};
   for (const s of stats ?? []) {
     const t = (totals[s.campaign_id] ??= { spend: 0, impressions: 0, clicks: 0, conversions: 0, revenue: 0 });
@@ -93,11 +134,22 @@ async function getCampaignsData(range: { from: string; to: string }): Promise<
     t.revenue += Number(s.revenue ?? 0);
   }
 
+  const networkOwner = new Map(allNetworks.map((n) => [n.id, n.user_id]));
+  const campaignCountByOwner = new Map<string, number>();
+  for (const c of campaigns ?? []) {
+    const owner = networkOwner.get(c.network_id);
+    if (!owner) continue;
+    campaignCountByOwner.set(owner, (campaignCountByOwner.get(owner) ?? 0) + 1);
+  }
+
   return {
     workspaceId: workspace.id,
     workspaceName: workspace.name,
-    networks: networks ?? [],
-    campaigns: campaigns ?? [],
+    isOwner,
+    selectedMember,
+    members: memberIds.map((id) => ({ id, label: nameOf(id), count: campaignCountByOwner.get(id) ?? 0 })),
+    networks: visibleNetworks,
+    campaigns: visibleCampaigns,
     totals,
   };
 }
@@ -105,9 +157,9 @@ async function getCampaignsData(range: { from: string; to: string }): Promise<
 export default async function CampaignsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; member?: string }>;
 }) {
-  const { from, to } = await searchParams;
+  const { from, to, member } = await searchParams;
   const range = resolveDateRange(from, to);
   if (!isSupabaseConfigured) {
     return (
@@ -117,7 +169,7 @@ export default async function CampaignsPage({
     );
   }
 
-  const result = await getCampaignsData(range);
+  const result = await getCampaignsData(range, member);
 
   if ("error" in result) {
     return (
@@ -129,7 +181,7 @@ export default async function CampaignsPage({
     );
   }
 
-  const { workspaceId, workspaceName, networks, campaigns, totals } = result;
+  const { workspaceId, workspaceName, isOwner, selectedMember, members, networks, campaigns, totals } = result;
   const networkMap = new Map(networks.map((n) => [n.id, n.name]));
   const networkProviderMap = new Map(networks.map((n) => [n.id, n.provider]));
 
@@ -162,8 +214,9 @@ export default async function CampaignsPage({
           <p className="text-sm text-muted">
             Daftar campaign workspace {workspaceName ? `"${workspaceName}"` : ""}. Statistik {range.from} s/d {range.to}.
           </p>
-          <div className="mt-3">
+          <div className="mt-3 space-y-2">
             <DateRangeFilter from={range.from} to={range.to} />
+            {isOwner ? <MemberFilterTabs members={members} selected={selectedMember} /> : null}
           </div>
         </div>
         {workspaceId && networks.length > 0 ? (

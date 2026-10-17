@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { DateRangeFilter } from "@/components/dashboard/DateRangeFilter";
+import { MemberFilterTabs } from "@/components/dashboard/MemberFilterTabs";
 import { resolveDateRange } from "@/lib/dateRange";
 import { AlertTriangle, BarChart3 } from "lucide-react";
 
@@ -56,22 +57,56 @@ function BarChart({ data, format }: { data: { label: string; value: number }[]; 
 export default async function AnalyticsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; network?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; network?: string; member?: string }>;
 }) {
   if (!isSupabaseConfigured) {
     return <div className="rounded-xl border border-border bg-surface p-10 text-center text-muted">Supabase belum dikonfigurasi.</div>;
   }
 
-  const { from, to, network } = await searchParams;
+  const { from, to, network, member } = await searchParams;
   const range = resolveDateRange(from, to);
   const supabase = await createClient();
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return <div className="rounded-xl border border-border bg-surface p-10 text-center text-muted">Sesi kamu sudah habis. Silakan masuk lagi.</div>;
+  }
+
+  const { data: workspace, error: workspaceError } = await supabase
+    .from("workspaces")
+    .select("id")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (workspaceError) {
+    return (
+      <div className="rounded-xl border border-danger/30 bg-danger/10 p-10 text-center text-danger flex flex-col items-center gap-2">
+        <AlertTriangle size={24} />
+        <p className="font-medium">Gagal memuat analytics</p>
+        <p className="text-sm">{workspaceError.message}</p>
+      </div>
+    );
+  }
+  if (!workspace) {
+    return <div className="rounded-xl border border-border bg-surface p-10 text-center text-muted">Belum ada workspace.</div>;
+  }
+
   const [
+    { data: myMembership },
+    { data: workspaceMembers },
     { data: networks, error: networksError },
     { data: campaigns },
   ] = await Promise.all([
-    supabase.from("ad_networks").select("id, name").order("name", { ascending: true }),
-    supabase.from("campaigns").select("id, name, network_id"),
+    supabase.from("workspace_members").select("role").eq("workspace_id", workspace.id).eq("user_id", user.id).maybeSingle(),
+    supabase.from("workspace_members").select("user_id").eq("workspace_id", workspace.id),
+    supabase
+      .from("ad_networks")
+      .select("id, name, user_id")
+      .eq("workspace_id", workspace.id)
+      .order("name", { ascending: true }),
+    supabase.from("campaigns").select("id, name, network_id").eq("workspace_id", workspace.id),
   ]);
   if (networksError) {
     return (
@@ -83,10 +118,38 @@ export default async function AnalyticsPage({
     );
   }
 
-  const networkName = new Map((networks ?? []).map((n) => [n.id, n.name]));
+  const isOwner = myMembership?.role === "Owner";
+  const memberIds = (workspaceMembers ?? []).map((m) => m.user_id);
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, email, full_name")
+    .in("id", memberIds.length > 0 ? memberIds : ["00000000-0000-0000-0000-000000000000"]);
+  const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+  const nameOf = (id: string) => {
+    const p = profileMap.get(id);
+    return p?.full_name || p?.email || "(tanpa nama)";
+  };
+  const selectedMember = isOwner && member && member !== "all" && memberIds.includes(member) ? member : !isOwner ? user.id : null;
+
+  const allNetworks = networks ?? [];
+  const memberFilteredNetworks = selectedMember ? allNetworks.filter((n) => n.user_id === selectedMember) : allNetworks;
+
+  const networkName = new Map(memberFilteredNetworks.map((n) => [n.id, n.name]));
   const selectedNetwork = network && networkName.has(network) ? network : null;
-  const visibleCampaigns = (campaigns ?? []).filter((c) => !selectedNetwork || c.network_id === selectedNetwork);
+  const memberFilteredNetworkIds = new Set(memberFilteredNetworks.map((n) => n.id));
+  const visibleCampaigns = (campaigns ?? []).filter(
+    (c) => memberFilteredNetworkIds.has(c.network_id) && (!selectedNetwork || c.network_id === selectedNetwork)
+  );
   const campaignIds = visibleCampaigns.map((c) => c.id);
+
+  const networkOwner = new Map(allNetworks.map((n) => [n.id, n.user_id]));
+  const campaignCountByOwner = new Map<string, number>();
+  for (const c of campaigns ?? []) {
+    const owner = networkOwner.get(c.network_id);
+    if (!owner) continue;
+    campaignCountByOwner.set(owner, (campaignCountByOwner.get(owner) ?? 0) + 1);
+  }
+  const members = memberIds.map((id) => ({ id, label: nameOf(id), count: campaignCountByOwner.get(id) ?? 0 }));
 
   const { data: stats } = campaignIds.length
     ? await supabase
@@ -153,13 +216,14 @@ export default async function AnalyticsPage({
           <form method="get" className="flex items-center gap-2">
             <input type="hidden" name="from" value={range.from} />
             <input type="hidden" name="to" value={range.to} />
+            {selectedMember ? <input type="hidden" name="member" value={selectedMember} /> : null}
             <select
               name="network"
               defaultValue={selectedNetwork ?? "all"}
               className="rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
             >
               <option value="all">Semua network</option>
-              {(networks ?? []).map((n) => (
+              {memberFilteredNetworks.map((n) => (
                 <option key={n.id} value={n.id}>
                   {n.name}
                 </option>
@@ -171,6 +235,7 @@ export default async function AnalyticsPage({
           </form>
         </div>
         <DateRangeFilter from={range.from} to={range.to} />
+        {isOwner ? <MemberFilterTabs members={members} selected={selectedMember} /> : null}
       </div>
 
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { Share2 } from "lucide-react";
 import { DateRangeFilter } from "@/components/dashboard/DateRangeFilter";
+import { MemberFilterTabs } from "@/components/dashboard/MemberFilterTabs";
 import { resolveDateRange } from "@/lib/dateRange";
 
 type Totals = { spend: number; impressions: number; clicks: number; conversions: number; revenue: number };
@@ -153,11 +154,22 @@ async function getOverview(memberParam: string | undefined, range: { from: strin
     rows: (campaignsByNetwork.get(n.id) ?? []).slice(0, 5),
   }));
 
+  const campaignCountByOwner = new Map<string, number>();
+  for (const c of campaigns ?? []) {
+    const owner = networkMap.get(c.network_id)?.user_id;
+    if (!owner) continue;
+    campaignCountByOwner.set(owner, (campaignCountByOwner.get(owner) ?? 0) + 1);
+  }
+
   return {
     isOwner,
     workspaceName: workspace.name,
     selectedMember,
-    members: (members ?? []).map((m) => ({ id: m.user_id, label: nameOf(m.user_id) })),
+    members: (members ?? []).map((m) => ({
+      id: m.user_id,
+      label: nameOf(m.user_id),
+      count: campaignCountByOwner.get(m.user_id) ?? 0,
+    })),
     total,
     networkRows,
     campaignGroups,
@@ -234,27 +246,7 @@ export default async function DashboardPage({
           </div>
         </div>
 
-        {isOwner ? (
-          <form method="get" className="flex items-center gap-2">
-            <input type="hidden" name="from" value={range.from} />
-            <input type="hidden" name="to" value={range.to} />
-            <select
-              name="member"
-              defaultValue={selectedMember ?? "all"}
-              className="rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-accent"
-            >
-              <option value="all">Semua anggota</option>
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-            <button type="submit" className="rounded-lg bg-accent text-white text-sm font-medium px-4 py-2 hover:bg-accent/90">
-              Tampilkan
-            </button>
-          </form>
-        ) : null}
+        {isOwner ? <MemberFilterTabs members={members} selected={selectedMember} /> : null}
       </div>
 
       {!hasData ? (
