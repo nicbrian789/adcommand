@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { MarkAllReadButton } from "@/components/dashboard/MarkAllReadButton";
 import { MarkReadButton } from "@/components/dashboard/MarkReadButton";
+import { AutoMarkAlertsRead } from "@/components/dashboard/AutoMarkAlertsRead";
 import { AlertTriangle, Bell, Wallet, TrendingDown, CircleSlash, Sparkles, Clock } from "lucide-react";
 
 type AlertRow = {
@@ -70,12 +71,10 @@ export default async function AlertsPage() {
   const unreadCount = rows.filter((r) => !r.read).length;
 
   const unreadIds = rows.filter((r) => !r.read).map((r) => r.id);
-  if (unreadIds.length > 0) {
-    await supabase.from("alerts").update({ read: true }).in("id", unreadIds);
-  }
 
   return (
     <div className="space-y-5">
+      <AutoMarkAlertsRead alertIds={unreadIds} />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-lg font-semibold">Alerts</h1>

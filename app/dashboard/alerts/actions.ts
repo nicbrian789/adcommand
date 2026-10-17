@@ -16,3 +16,11 @@ export async function markAllAlertsRead(workspaceId: string) {
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard/alerts");
 }
+
+export async function markAlertsSeen(alertIds: string[]) {
+  if (alertIds.length === 0) return;
+  const supabase = await createClient();
+  const { error } = await supabase.from("alerts").update({ read: true }).in("id", alertIds);
+  if (error) throw new Error(error.message);
+  revalidatePath("/dashboard/alerts");
+}
