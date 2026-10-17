@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   description: "Unified dashboard for managing ad networks, campaigns, and statistics.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"

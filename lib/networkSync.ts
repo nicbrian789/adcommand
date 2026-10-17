@@ -13,7 +13,13 @@ import {
 import { getAdsterraBalance, getAdsterraStats } from "@/lib/integrations/adsterra";
 import { getJuicyAdsDailyStats, listJuicyAdsCampaigns } from "@/lib/integrations/juicyads";
 import { getTrafficJunkyBalance, getTrafficJunkyStats } from "@/lib/integrations/trafficjunky";
-import { getTrafficFactorySessionToken, getTrafficFactoryStats } from "@/lib/integrations/trafficfactory";
+import {
+  canPersistTrafficFactoryBalance,
+  getTrafficFactoryDailyStats,
+  getTrafficFactorySessionToken,
+  getTrafficFactoryUser,
+  listTrafficFactoryCampaigns,
+} from "@/lib/integrations/trafficfactory";
 
 type Supabase = SupabaseClient;
 
@@ -431,83 +437,69 @@ async function syncTrafficJunky(supabase: Supabase, network: { id: string; works
 
 async function syncTrafficFactory(supabase: Supabase, network: { id: string; workspace_id: string }, token: string) {
   const { dateFrom, dateTo } = sevenDayRange();
+  // Compatibility auth (POST /login) — see trafficfactory.ts auth note.
   const sessionToken = await getTrafficFactorySessionToken(token);
-  const rows = await getTrafficFactoryStats(sessionToken, dateFrom, dateTo);
 
-  if (rows.length === 0) return { campaigns: 0, days: 0 };
-
-  const sample = rows[0];
-  const idKey = findKey(sample, (k) => /campaign/i.test(k) && /id/i.test(k)) ?? findKey(sample, (k) => k.toLowerCase() === "campaign");
-  const nameKey = findKey(sample, (k) => /campaign/i.test(k) && /name/i.test(k));
-  const dateKey = findKey(sample, (k) => k.toLowerCase() === "date") ?? findKey(sample, (k) => /date/i.test(k));
-  const costKey = findKey(sample, (k) => /cost|spend/i.test(k));
-  const impKey = findKey(sample, (k) => /impression/i.test(k));
-  const clickKey = findKey(sample, (k) => /click/i.test(k));
-
-  if (!idKey || !dateKey) {
-    throw new Error(
-      `Field campaign/tanggal tidak ditemukan di respons Traffic Factory. Field yang ada: ${Object.keys(sample).join(", ")}`
-    );
+  // GET /user — persist balance only when currency won't mislead USD UI totals.
+  const userInfo = await getTrafficFactoryUser(sessionToken);
+  if (canPersistTrafficFactoryBalance(userInfo.currency)) {
+    await saveBalance(supabase, network.id, userInfo.balance);
   }
 
+  // GET /campaigns — real IDs, names, statuses.
+  const { items: tfCampaigns } = await listTrafficFactoryCampaigns(sessionToken);
   const campaignIds = new Map<string, string>();
-  const rows_: StatRow[] = [];
+  for (const tc of tfCampaigns) {
+    const id = await upsertCampaign(
+      supabase,
+      network.workspace_id,
+      network.id,
+      tc.externalId,
+      tc.name,
+      tc.status
+    );
+    campaignIds.set(tc.externalId, id);
+  }
 
-  for (const item of rows) {
-    const externalId = String(item[idKey]);
-    if (!campaignIds.has(externalId)) {
-      const campaignId = await upsertCampaign(
+  // GET /statistics/a/date — skip account-level rows (no campaign_id) to avoid
+  // synthetic campaigns / double-counting against per-campaign figures.
+  const { items: dailyStats } = await getTrafficFactoryDailyStats(sessionToken, dateFrom, dateTo);
+
+  const merged = new Map<string, StatRow>();
+  for (const row of dailyStats) {
+    if (!row.campaignExternalId) continue;
+
+    let campaignId = campaignIds.get(row.campaignExternalId);
+    if (!campaignId) {
+      campaignId = await upsertCampaign(
         supabase,
         network.workspace_id,
         network.id,
-        externalId,
-        nameKey && item[nameKey] ? String(item[nameKey]) : `Traffic Factory ${externalId}`,
-        "Running"
+        row.campaignExternalId,
+        `Traffic Factory ${row.campaignExternalId}`,
+        "Draft"
       );
-      campaignIds.set(externalId, campaignId);
+      campaignIds.set(row.campaignExternalId, campaignId);
     }
 
-    rows_.push({
+    const key = `${campaignId}|${row.date}|${ALL}`;
+    if (merged.has(key)) continue; // pagination/API dupes — do not sum (avoids double-count)
+
+    merged.set(key, {
       workspace_id: network.workspace_id,
-      campaign_id: campaignIds.get(externalId)!,
-      stat_date: String(item[dateKey]).slice(0, 10),
+      campaign_id: campaignId,
+      stat_date: row.date,
       country: ALL,
-      spend: costKey ? Number(item[costKey] ?? 0) : null,
-      impressions: impKey ? Number(item[impKey] ?? 0) : null,
-      clicks: clickKey ? Number(item[clickKey] ?? 0) : null,
+      // Keep null when unknown — never coerce to 0.
+      spend: row.spend,
+      impressions: row.impressions,
+      clicks: row.clicks,
       conversions: null,
       revenue: null,
     });
   }
 
-  let saved = await saveStats(supabase, rows_);
-
-  const geoRows = await getTrafficFactoryStats(sessionToken, dateFrom, dateTo, ["date", "campaign", "country"]);
-  if (geoRows.length > 0) {
-    const countryKey = findKey(geoRows[0], (k) => /country/i.test(k));
-    if (countryKey) {
-      const geoStatRows: StatRow[] = [];
-      for (const item of geoRows) {
-        const externalId = String(item[idKey]);
-        const campaignId = campaignIds.get(externalId);
-        const country = countryToCode(item[countryKey]);
-        if (!campaignId || !country) continue;
-        geoStatRows.push({
-          workspace_id: network.workspace_id,
-          campaign_id: campaignId,
-          stat_date: String(item[dateKey]).slice(0, 10),
-          country,
-          spend: costKey ? Number(item[costKey] ?? 0) : null,
-          impressions: impKey ? Number(item[impKey] ?? 0) : null,
-          clicks: clickKey ? Number(item[clickKey] ?? 0) : null,
-          conversions: null,
-          revenue: null,
-        });
-      }
-      saved += await saveStats(supabase, geoStatRows);
-    }
-  }
-
+  const saved = await saveStats(supabase, [...merged.values()]);
   return { campaigns: campaignIds.size, days: saved };
 }
 
