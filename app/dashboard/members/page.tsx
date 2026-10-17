@@ -153,9 +153,9 @@ export default async function MembersPage() {
                   {isOwner ? (
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
+                        <SeedNetworksButton userId={m.user_id} />
                         {m.role !== "Owner" ? (
                           <>
-                            <SeedNetworksButton userId={m.user_id} />
                             <PromoteOwnerButton userId={m.user_id} name={m.full_name || m.email} />
                             <RemoveMemberButton userId={m.user_id} name={m.full_name || m.email} />
                           </>
