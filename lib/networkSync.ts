@@ -13,7 +13,11 @@ import {
 import { getAdsterraBalance, getAdsterraStats } from "@/lib/integrations/adsterra";
 import { getJuicyAdsDailyStats, listJuicyAdsCampaigns } from "@/lib/integrations/juicyads";
 import { getTrafficJunkyBalance, getTrafficJunkyStats } from "@/lib/integrations/trafficjunky";
-import { getTrafficFactorySessionToken, getTrafficFactoryStats } from "@/lib/integrations/trafficfactory";
+import {
+  getTrafficFactorySessionToken,
+  getTrafficFactoryStatsByDate,
+  getTrafficFactoryStatsByCountry,
+} from "@/lib/integrations/trafficfactory";
 
 type Supabase = SupabaseClient;
 
@@ -432,16 +436,16 @@ async function syncTrafficJunky(supabase: Supabase, network: { id: string; works
 async function syncTrafficFactory(supabase: Supabase, network: { id: string; workspace_id: string }, token: string) {
   const { dateFrom, dateTo } = sevenDayRange();
   const sessionToken = await getTrafficFactorySessionToken(token);
-  const rows = await getTrafficFactoryStats(sessionToken, dateFrom, dateTo);
+  const rows = await getTrafficFactoryStatsByDate(sessionToken, dateFrom, dateTo);
 
   if (rows.length === 0) return { campaigns: 0, days: 0 };
 
   const sample = rows[0];
   const idKey = findKey(sample, (k) => /campaign/i.test(k) && /id/i.test(k)) ?? findKey(sample, (k) => k.toLowerCase() === "campaign");
   const nameKey = findKey(sample, (k) => /campaign/i.test(k) && /name/i.test(k));
-  const dateKey = findKey(sample, (k) => k.toLowerCase() === "date") ?? findKey(sample, (k) => /date/i.test(k));
+  const dateKey = findKey(sample, (k) => k.toLowerCase() === "ddate") ?? findKey(sample, (k) => /date/i.test(k));
   const costKey = findKey(sample, (k) => /cost|spend/i.test(k));
-  const impKey = findKey(sample, (k) => /impression/i.test(k));
+  const impKey = findKey(sample, (k) => /impression/i.test(k)) ?? findKey(sample, (k) => k.toLowerCase() === "hits");
   const clickKey = findKey(sample, (k) => /click/i.test(k));
 
   if (!idKey || !dateKey) {
@@ -482,31 +486,36 @@ async function syncTrafficFactory(supabase: Supabase, network: { id: string; wor
 
   let saved = await saveStats(supabase, rows_);
 
-  const geoRows = await getTrafficFactoryStats(sessionToken, dateFrom, dateTo, ["date", "campaign", "country"]);
-  if (geoRows.length > 0) {
-    const countryKey = findKey(geoRows[0], (k) => /country/i.test(k));
-    if (countryKey) {
-      const geoStatRows: StatRow[] = [];
-      for (const item of geoRows) {
-        const externalId = String(item[idKey]);
-        const campaignId = campaignIds.get(externalId);
-        const country = countryToCode(item[countryKey]);
-        if (!campaignId || !country) continue;
-        geoStatRows.push({
-          workspace_id: network.workspace_id,
-          campaign_id: campaignId,
-          stat_date: String(item[dateKey]).slice(0, 10),
-          country,
-          spend: costKey ? Number(item[costKey] ?? 0) : null,
-          impressions: impKey ? Number(item[impKey] ?? 0) : null,
-          clicks: clickKey ? Number(item[clickKey] ?? 0) : null,
-          conversions: null,
-          revenue: null,
-        });
-      }
-      saved += await saveStats(supabase, geoStatRows);
+  // TrafficFactory nggak punya endpoint gabungan date+country+campaign dalam satu request
+  // (/statistics/a/country cuma kasih total per rentang tanggal, bukan per hari), jadi di-loop
+  // per hari biar breakdown negara tetap punya stat_date yang bener.
+  const geoStatRows: StatRow[] = [];
+  for (const day of daysBetween(dateFrom, dateTo)) {
+    const geoRows = await getTrafficFactoryStatsByCountry(sessionToken, day, day);
+    if (geoRows.length === 0) continue;
+
+    const countryKey = findKey(geoRows[0], (k) => k.toLowerCase() === "country") ?? findKey(geoRows[0], (k) => /country/i.test(k));
+    if (!countryKey) continue;
+
+    for (const item of geoRows) {
+      const externalId = String(item[idKey]);
+      const campaignId = campaignIds.get(externalId);
+      const country = countryToCode(item[countryKey]);
+      if (!campaignId || !country) continue;
+      geoStatRows.push({
+        workspace_id: network.workspace_id,
+        campaign_id: campaignId,
+        stat_date: day,
+        country,
+        spend: costKey ? Number(item[costKey] ?? 0) : null,
+        impressions: impKey ? Number(item[impKey] ?? 0) : null,
+        clicks: clickKey ? Number(item[clickKey] ?? 0) : null,
+        conversions: null,
+        revenue: null,
+      });
     }
   }
+  saved += await saveStats(supabase, geoStatRows);
 
   return { campaigns: campaignIds.size, days: saved };
 }
