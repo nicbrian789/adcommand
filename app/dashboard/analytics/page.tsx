@@ -247,12 +247,13 @@ export default async function AnalyticsPage({
 
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: "Spend", value: money(total.spend), isMoney: true },
-          { label: "Klik", value: count(total.clicks), isMoney: false },
-          { label: "CTR", value: `${overallCtr.toFixed(2)}%`, isMoney: false },
-          { label: "CPC", value: `$${cpcOf(total).toFixed(4)}`, isMoney: true },
+          { label: "Spend", value: money(total.spend), isMoney: true, chip: "#3b82f6" },
+          { label: "Klik", value: count(total.clicks), isMoney: false, chip: "#22c55e" },
+          { label: "CTR", value: `${overallCtr.toFixed(2)}%`, isMoney: false, chip: "#f59e0b" },
+          { label: "CPC", value: `$${cpcOf(total).toFixed(4)}`, isMoney: true, chip: "#a855f7" },
         ].map((k) => (
           <div key={k.label} className="rounded-xl border border-border bg-surface p-4">
+            <div className="h-6 w-6 rounded-md mb-2" style={{ backgroundColor: k.chip }} />
             <div className="text-[11px] uppercase tracking-wide text-muted mb-1">{k.label}</div>
             <div className={`text-lg font-semibold tabular-nums ${k.isMoney ? "text-success" : ""}`}>{k.value}</div>
           </div>
