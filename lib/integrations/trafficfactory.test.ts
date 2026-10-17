@@ -6,8 +6,10 @@ import {
   getTrafficFactorySessionToken,
   getTrafficFactoryUser,
   listTrafficFactoryCampaigns,
+  loginTrafficFactory,
   mapTrafficFactoryCampaignStatus,
   parseTrafficFactoryDailyStatRow,
+  parseTrafficFactoryLoginResponse,
   parseTrafficFactorySessionToken,
   parseTrafficFactoryUser,
   pickFirstNumber,
@@ -24,27 +26,89 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe("Traffic Factory auth", () => {
-  it("parses session token from login JSON (compatibility path)", () => {
-    assert.equal(parseTrafficFactorySessionToken('"abc-session"'), "abc-session");
-    assert.equal(parseTrafficFactorySessionToken(JSON.stringify({ session_token: "tok123" })), "tok123");
+describe("Traffic Factory auth (official login contract)", () => {
+  it("parses official login body: token preferred over refresh_token", () => {
+    const parsed = parseTrafficFactoryLoginResponse(
+      JSON.stringify({
+        token: "access-abc",
+        type: "Bearer",
+        expires_in: 3600,
+        refresh_token: "refresh-xyz",
+      })
+    );
+    assert.equal(parsed.token, "access-abc");
+    assert.equal(parsed.type, "Bearer");
+    assert.equal(parsed.expiresIn, 3600);
+    assert.equal(parsed.refreshToken, "refresh-xyz");
+    // Must never treat refresh as access when both exist
+    assert.equal(parseTrafficFactorySessionToken(JSON.stringify({
+      refresh_token: "refresh-xyz",
+      token: "access-abc",
+    })), "access-abc");
   });
 
-  it("exchanges API token via POST /login (mocked)", async () => {
+  it("rejects missing access token even if refresh_token present", () => {
+    assert.throws(
+      () => parseTrafficFactoryLoginResponse(JSON.stringify({ refresh_token: "only-refresh", type: "Bearer" })),
+      /Tidak menemukan token/
+    );
+  });
+
+  it("sends api_token and uses returned token as session", async () => {
+    let sawBearerPath = false;
     const fetchFn: TfFetch = async (input, init) => {
-      assert.match(String(input), /\/login$/);
-      assert.equal(init?.method, "POST");
-      const body = JSON.parse(String(init?.body));
-      assert.equal(body.api_token, "api-key-test");
-      return jsonResponse({ access_token: "session-xyz" });
+      const url = String(input);
+      if (url.endsWith("/login")) {
+        assert.equal(init?.method, "POST");
+        const body = JSON.parse(String(init?.body));
+        assert.equal(body.api_token, "api-key-test");
+        return jsonResponse({
+          token: "access-from-login",
+          type: "Bearer",
+          expires_in: 7200,
+          refresh_token: "refresh-should-not-be-used",
+        });
+      }
+      if (url.endsWith("/user")) {
+        sawBearerPath = true;
+        const headerAuth =
+          typeof init?.headers === "object" && init.headers && "Authorization" in (init.headers as object)
+            ? (init.headers as Record<string, string>).Authorization
+            : undefined;
+        assert.equal(headerAuth, "Bearer access-from-login");
+        return jsonResponse({ balance: 1, currency: "USD" });
+      }
+      return jsonResponse({ error: "unexpected" }, 500);
     };
+
+    const login = await loginTrafficFactory("api-key-test", fetchFn);
+    assert.equal(login.token, "access-from-login");
+    assert.notEqual(login.token, login.refreshToken);
+
     const session = await getTrafficFactorySessionToken("api-key-test", fetchFn);
-    assert.equal(session, "session-xyz");
+    assert.equal(session, "access-from-login");
+    await getTrafficFactoryUser(session, fetchFn);
+    assert.equal(sawBearerPath, true);
   });
 
-  it("fails auth on non-OK login", async () => {
+  it("rejects empty API token before calling network", async () => {
+    let called = false;
+    const fetchFn: TfFetch = async () => {
+      called = true;
+      return jsonResponse({});
+    };
+    await assert.rejects(() => loginTrafficFactory("  ", fetchFn), /kosong/);
+    assert.equal(called, false);
+  });
+
+  it("maps 401/403 login failures clearly", async () => {
     const fetchFn: TfFetch = async () => jsonResponse({ error: "denied" }, 401);
-    await assert.rejects(() => getTrafficFactorySessionToken("bad", fetchFn), /Login Traffic Factory gagal/);
+    await assert.rejects(() => getTrafficFactorySessionToken("bad", fetchFn), /ditolak \(401\)/);
+  });
+
+  it("maps 401 on GET as expired/invalid session", async () => {
+    const fetchFn: TfFetch = async () => jsonResponse({ error: "expired" }, 401);
+    await assert.rejects(() => getTrafficFactoryUser("stale", fetchFn), /ditolak \(401\).*\/user/);
   });
 });
 

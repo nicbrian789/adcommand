@@ -1,10 +1,10 @@
 /**
  * Traffic Factory API v2 — read-only connector.
  *
- * Auth note (uncertain vs public docs — docs are gated):
- * Prior ADCOMMAND code used API token → POST /login → Bearer session.
- * That flow is retained for compatibility; it is NOT claimed as the only
- * official method. Callers must not treat login success as proof of field semantics.
+ * Auth (official POST /v2/login contract):
+ *   Body: { api_token }
+ *   Success: { token, type: "Bearer", expires_in, refresh_token }
+ *   Subsequent GETs use Authorization: Bearer <token> (access token, not refresh_token).
  *
  * Network I/O is injectable via fetchFn (unit tests use mocks; no live calls in CI).
  */
@@ -48,8 +48,17 @@ export type PaginatedResult<T> = {
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGES = 50;
 
-function authHeaders(sessionToken: string): HeadersInit {
-  return { Authorization: `Bearer ${sessionToken}`, Accept: "application/json" };
+function authHeaders(accessToken: string): HeadersInit {
+  return { Authorization: `Bearer ${accessToken}`, Accept: "application/json" };
+}
+
+function throwTrafficFactoryHttpError(path: string, status: number, body: string): never {
+  if (status === 401 || status === 403) {
+    throw new Error(
+      `Sesi/akses Traffic Factory ditolak (${status}) pada ${path}. Token akses mungkin kedaluwarsa atau API token tidak valid. Respons: ${body.slice(0, 200)}`
+    );
+  }
+  throw new Error(`Gagal mengambil ${path} Traffic Factory (${status}). Respons: ${body.slice(0, 300)}`);
 }
 
 export function pickFirstNumber(row: Record<string, unknown>, keys: readonly string[]): number | null {
@@ -90,44 +99,100 @@ export function unwrapList(data: unknown): Record<string, unknown>[] {
   return [];
 }
 
-export function parseTrafficFactorySessionToken(text: string): string {
+export type TrafficFactoryLoginResult = {
+  token: string;
+  type: string | null;
+  expiresIn: number | null;
+  refreshToken: string | null;
+};
+
+/**
+ * Parse official login JSON. Prefer `token` (access); never return `refresh_token`.
+ */
+export function parseTrafficFactoryLoginResponse(text: string): TrafficFactoryLoginResult {
+  let data: unknown;
   try {
-    const data = JSON.parse(text);
-    if (typeof data === "string" && data.trim()) return data.trim();
-    if (data && typeof data === "object") {
-      const obj = data as Record<string, unknown>;
-      for (const key of Object.keys(obj)) {
-        if (/token/i.test(key) && typeof obj[key] === "string" && (obj[key] as string).trim()) {
-          return (obj[key] as string).trim();
-        }
-      }
-    }
+    data = JSON.parse(text);
   } catch {
     const stripped = text.replace(/^"|"$/g, "").trim();
-    if (stripped) return stripped;
+    if (stripped) {
+      return { token: stripped, type: null, expiresIn: null, refreshToken: null };
+    }
+    throw new Error(`Respons login Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
   }
-  throw new Error(`Tidak menemukan session token di respons login Traffic Factory: ${text.slice(0, 300)}`);
+
+  if (typeof data === "string" && data.trim()) {
+    return { token: data.trim(), type: null, expiresIn: null, refreshToken: null };
+  }
+
+  const obj = asRecord(data);
+  if (!obj) {
+    throw new Error(`Tidak menemukan token di respons login Traffic Factory: ${text.slice(0, 300)}`);
+  }
+
+  // Official field first, then legacy aliases — never refresh_token as access token.
+  const token =
+    pickFirstString(obj, ["token", "access_token", "session_token"]) ??
+    null;
+  if (!token) {
+    throw new Error(`Tidak menemukan token di respons login Traffic Factory: ${text.slice(0, 300)}`);
+  }
+
+  const type = pickFirstString(obj, ["type", "token_type"]);
+  const expiresRaw = obj.expires_in ?? obj.expiresIn;
+  const expiresIn =
+    typeof expiresRaw === "number" && Number.isFinite(expiresRaw)
+      ? expiresRaw
+      : typeof expiresRaw === "string" && Number.isFinite(Number(expiresRaw))
+        ? Number(expiresRaw)
+        : null;
+  const refreshToken = pickFirstString(obj, ["refresh_token", "refreshToken"]);
+
+  return { token, type, expiresIn, refreshToken };
+}
+
+/** @deprecated Prefer parseTrafficFactoryLoginResponse; returns access token only. */
+export function parseTrafficFactorySessionToken(text: string): string {
+  return parseTrafficFactoryLoginResponse(text).token;
 }
 
 /**
- * Compatibility auth: POST /login with api_token → session string.
- * Retained from existing connector; public docs were not available to re-verify.
+ * Official auth: POST /login with { api_token } → access `token` for Bearer GETs.
  */
 export async function getTrafficFactorySessionToken(
   apiToken: string,
   fetchFn: TfFetch = fetch
 ): Promise<string> {
+  const login = await loginTrafficFactory(apiToken, fetchFn);
+  return login.token;
+}
+
+export async function loginTrafficFactory(
+  apiToken: string,
+  fetchFn: TfFetch = fetch
+): Promise<TrafficFactoryLoginResult> {
+  const trimmed = apiToken.trim();
+  if (!trimmed) {
+    throw new Error("API token Traffic Factory kosong.");
+  }
+
   const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ api_token: apiToken }),
+    body: JSON.stringify({ api_token: trimmed }),
   });
 
   const text = await res.text();
   if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(
+        `Login Traffic Factory ditolak (${res.status}). Periksa API token. Respons: ${text.slice(0, 200)}`
+      );
+    }
     throw new Error(`Login Traffic Factory gagal (${res.status}). Respons: ${text.slice(0, 300)}`);
   }
-  return parseTrafficFactorySessionToken(text);
+
+  return parseTrafficFactoryLoginResponse(text);
 }
 
 /**
@@ -170,7 +235,7 @@ export async function getTrafficFactoryUser(
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`Gagal mengambil /user Traffic Factory (${res.status}). Respons: ${text.slice(0, 300)}`);
+    throwTrafficFactoryHttpError("/user", res.status, text);
   }
   let data: unknown;
   try {
@@ -231,7 +296,7 @@ async function fetchPaginatedRecords(
     const res = await fetchFn(url, { headers: authHeaders(sessionToken) });
     const text = await res.text();
     if (!res.ok) {
-      throw new Error(`Gagal mengambil ${path} Traffic Factory (${res.status}). Respons: ${text.slice(0, 300)}`);
+      throwTrafficFactoryHttpError(path, res.status, text);
     }
 
     let data: unknown;
