@@ -100,6 +100,14 @@ export default async function MembersPage() {
 
   const { workspaceName, members, isOwner } = result;
 
+  if (!isOwner) {
+    return (
+      <div className="rounded-xl border border-border bg-surface p-10 text-center text-muted">
+        Halaman ini cuma bisa diakses Owner workspace.
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <div>
@@ -109,7 +117,7 @@ export default async function MembersPage() {
         </p>
       </div>
 
-      {isOwner ? <InviteMemberForm /> : null}
+      <InviteMemberForm />
 
       <div className="rounded-xl border border-border bg-surface">
         {members.length === 0 ? (

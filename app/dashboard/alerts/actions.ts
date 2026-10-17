@@ -5,7 +5,19 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function markAlertRead(alertId: string) {
   const supabase = await createClient();
-  const { error } = await supabase.from("alerts").update({ read: true }).eq("id", alertId);
+  const { data: workspace } = await supabase
+    .from("workspaces")
+    .select("id")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!workspace) throw new Error("Belum ada workspace.");
+
+  const { error } = await supabase
+    .from("alerts")
+    .update({ read: true })
+    .eq("id", alertId)
+    .eq("workspace_id", workspace.id);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard/alerts");
 }

@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ADCOMMAND
 
-## Getting Started
+Advertising Command Center — dashboard multi-network untuk sync campaign, analytics, alert, dan manajemen workspace.
 
-First, run the development server:
+## Stack
+
+- Next.js 16 + React 19 + Tailwind CSS 4
+- Supabase (Auth + Postgres)
+- Deploy: Vercel (region `sin1`)
+
+## Setup lokal
+
+1. Install dependensi:
+
+```bash
+npm install
+```
+
+2. Salin env:
+
+```bash
+cp .env.example .env.local
+```
+
+Isi `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, dan `SUPABASE_SERVICE_ROLE_KEY`.
+
+3. Pastikan skema Supabase sesuai `docs/SCHEMA.md` (tabel + RPC).
+
+4. Jalankan:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Buka [http://localhost:3000](http://localhost:3000) (redirect ke `/dashboard`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Tanpa env Supabase, auth gating di-skip hanya di development. Di production/Vercel, `/dashboard` tidak dibuka tanpa konfigurasi.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Env penting
 
-## Learn More
+| Variabel | Wajib | Kegunaan |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | ya | URL project Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ya | Client/anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | ya | Admin/cron/invite |
+| `CRON_SECRET` | ya (prod) | Bearer token cron |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | tidak | Alert ke Telegram |
 
-To learn more about Next.js, take a look at the following resources:
+## Cron (Vercel)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Didefinisikan di `vercel.json`:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `/api/cron/auto-sync` — setiap 6 jam
+- `/api/cron/stale-sync` — setiap hari jam 02:00 UTC
 
-## Deploy on Vercel
+Keduanya membutuhkan header `Authorization: Bearer $CRON_SECRET` (Vercel Cron mengirim ini otomatis jika `CRON_SECRET` ter-set).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Fitur utama
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Auth + workspace members (Owner / Member)
+- Networks + sync (TrafficStars, TrafficJunky, Adsterra, JuicyAds, Traffic Factory)
+- Campaigns, analytics, GEO, websites, reports CSV, alerts
+- Buat/edit campaign TrafficStars

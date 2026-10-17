@@ -28,7 +28,7 @@ export function RemoveMemberButton({ userId, name }: { userId: string; name: str
     return (
       <div className="flex flex-col items-end gap-1">
         <span className="text-xs text-danger text-right max-w-[220px]">
-          Hapus {name}? Akun & network yang dia tambahin ikut terhapus permanen.
+          Hapus {name} dari workspace? Network miliknya di workspace ini ikut dihapus. Akun login tidak dihapus.
         </span>
         <div className="flex gap-2">
           <button

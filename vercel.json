@@ -2,6 +2,10 @@
   "regions": ["sin1"],
   "crons": [
     {
+      "path": "/api/cron/auto-sync",
+      "schedule": "0 */6 * * *"
+    },
+    {
       "path": "/api/cron/stale-sync",
       "schedule": "0 2 * * *"
     }

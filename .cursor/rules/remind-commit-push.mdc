@@ -1,0 +1,13 @@
+---
+description: Ingatkan commit dan push ke origin setelah setiap pekerjaan
+alwaysApply: true
+---
+
+# Reminder commit & push
+
+Setelah menyelesaikan pekerjaan yang mengubah file di repo ini:
+
+1. **Jangan** commit atau push otomatis.
+2. Di akhir respons, **ingatkan user** singkat: ada perubahan lokal yang belum di-commit/push, dan tanya apakah ingin commit + push ke `origin`.
+3. Baru commit + push jika user secara eksplisit meminta (mis. "commit dan push ke origin").
+4. Skip reminder jika tidak ada perubahan file, atau user baru saja meminta commit/push di prompt yang sama.
