@@ -54,7 +54,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar networks={networks} unreadAlerts={unreadAlerts} isOwner={isOwner} />
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 pt-14 lg:pt-0">
         <Topbar unreadAlerts={unreadAlerts} />
         <main className="flex-1 p-4 lg:p-6 space-y-5">{children}</main>
       </div>
