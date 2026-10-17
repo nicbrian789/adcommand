@@ -218,14 +218,14 @@ export default async function DashboardPage({
   const roas = total.spend > 0 ? total.revenue / total.spend : 0;
 
   const kpis = [
-    { label: "Spend", value: money(total.spend) },
-    { label: "Impressions", value: count(total.impressions) },
-    { label: "Klik", value: count(total.clicks) },
-    { label: "CTR", value: `${ctr.toFixed(2)}%` },
-    { label: "CPC", value: `$${cpc.toFixed(4)}` },
-    { label: "Konversi", value: count(total.conversions) },
-    { label: "Revenue", value: money(total.revenue) },
-    { label: "ROAS", value: `${roas.toFixed(2)}x` },
+    { label: "Spend", value: money(total.spend), isMoney: true },
+    { label: "Impressions", value: count(total.impressions), isMoney: false },
+    { label: "Klik", value: count(total.clicks), isMoney: false },
+    { label: "CTR", value: `${ctr.toFixed(2)}%`, isMoney: false },
+    { label: "CPC", value: `$${cpc.toFixed(4)}`, isMoney: true },
+    { label: "Konversi", value: count(total.conversions), isMoney: false },
+    { label: "Revenue", value: money(total.revenue), isMoney: true },
+    { label: "ROAS", value: `${roas.toFixed(2)}x`, isMoney: false },
   ];
 
   return (
@@ -266,7 +266,7 @@ export default async function DashboardPage({
             {kpis.map((k) => (
               <div key={k.label} className="rounded-xl border border-border bg-surface p-4">
                 <div className="text-[11px] uppercase tracking-wide text-muted mb-1">{k.label}</div>
-                <div className="text-lg font-semibold tabular-nums">{k.value}</div>
+                <div className={`text-lg font-semibold tabular-nums ${k.isMoney ? "text-success" : ""}`}>{k.value}</div>
               </div>
             ))}
           </section>
@@ -290,10 +290,10 @@ export default async function DashboardPage({
                     <tr key={n.id} className="border-b border-border/60 last:border-0">
                       <td className="px-4 py-2 font-medium">{n.name}</td>
                       {isOwner ? <td className="px-4 py-2 text-muted">{n.owner}</td> : null}
-                      <td className="px-4 py-2 text-right tabular-nums">{money(n.t.spend)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-success">{money(n.t.spend)}</td>
                       <td className="px-4 py-2 text-right tabular-nums">{count(n.t.clicks)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{money(n.t.revenue)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">
+                      <td className="px-4 py-2 text-right tabular-nums text-success">{money(n.t.revenue)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-success">
                         {n.balance !== null ? money(n.balance) : <span className="text-muted">-</span>}
                       </td>
                     </tr>
@@ -333,12 +333,12 @@ export default async function DashboardPage({
                           return (
                             <tr key={c.id} className="border-b border-border/60 last:border-0 hover:bg-surface-2/60">
                               <td className="px-4 py-2 pl-6">{c.name}</td>
-                              <td className="px-4 py-2 text-right tabular-nums">{money(c.t.spend)}</td>
+                              <td className="px-4 py-2 text-right tabular-nums text-success">{money(c.t.spend)}</td>
                               <td className="px-4 py-2 text-right tabular-nums">{count(c.t.impressions)}</td>
                               <td className="px-4 py-2 text-right tabular-nums">{count(c.t.clicks)}</td>
                               <td className="px-4 py-2 text-right tabular-nums">{cCtr.toFixed(2)}%</td>
                               <td className="px-4 py-2 text-right tabular-nums">{count(c.t.conversions)}</td>
-                              <td className="px-4 py-2 text-right tabular-nums">{money(c.t.revenue)}</td>
+                              <td className="px-4 py-2 text-right tabular-nums text-success">{money(c.t.revenue)}</td>
                             </tr>
                           );
                         })}

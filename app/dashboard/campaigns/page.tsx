@@ -281,12 +281,12 @@ export default async function CampaignsPage({
                             {c.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right">{t ? money(t.spend) : "-"}</td>
+                        <td className="px-4 py-3 text-right text-success">{t ? money(t.spend) : "-"}</td>
                         <td className="px-4 py-3 text-right">{t ? count(t.impressions) : "-"}</td>
                         <td className="px-4 py-3 text-right">{t ? count(t.clicks) : "-"}</td>
                         <td className="px-4 py-3 text-right">{ctr !== null ? `${ctr.toFixed(2)}%` : "-"}</td>
                         <td className="px-4 py-3 text-right">{t ? count(t.conversions) : "-"}</td>
-                        <td className="px-4 py-3 text-right">{t ? money(t.revenue) : "-"}</td>
+                        <td className="px-4 py-3 text-right text-success">{t ? money(t.revenue) : "-"}</td>
                         <td className="px-4 py-3 text-right">{roas !== null ? `${roas.toFixed(2)}x` : "-"}</td>
                         <td className="px-4 py-3">
                           {canManage ? (

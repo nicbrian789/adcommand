@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  let networks: { id: string; name: string; synced: boolean }[] = [];
+  let networks: { id: string; name: string; synced: boolean; provider: string | null }[] = [];
   let unreadAlerts = 0;
   let isOwner = false;
 
@@ -26,7 +26,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       const [{ data: rows }, { data: campaigns }, { count }, { data: myMembership }] = await Promise.all([
         supabase
           .from("ad_networks")
-          .select("id, name")
+          .select("id, name, provider")
           .eq("workspace_id", workspace.id)
           .eq("user_id", user.id)
           .order("name", { ascending: true }),
@@ -45,7 +45,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       ]);
 
       const syncedIds = new Set((campaigns ?? []).map((c) => c.network_id));
-      networks = (rows ?? []).map((n) => ({ id: n.id, name: n.name, synced: syncedIds.has(n.id) }));
+      networks = (rows ?? []).map((n) => ({ id: n.id, name: n.name, synced: syncedIds.has(n.id), provider: n.provider }));
       unreadAlerts = count ?? 0;
       isOwner = myMembership?.role === "Owner";
     }

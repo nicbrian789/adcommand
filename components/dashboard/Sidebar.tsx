@@ -19,13 +19,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
-const networkColors = ["#22d3ee", "#ef4444", "#a78bfa", "#f472b6", "#fb923c", "#38bdf8", "#f43f5e"];
-
-function colorFor(name: string) {
-  let hash = 0;
-  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  return networkColors[hash % networkColors.length];
-}
+import { colorForNetwork } from "@/lib/networkColors";
 
 function badgeFor(name: string) {
   const words = name.trim().split(/\s+/);
@@ -53,7 +47,7 @@ export function Sidebar({
   unreadAlerts = 0,
   isOwner = false,
 }: {
-  networks: { id: string; name: string; synced: boolean }[];
+  networks: { id: string; name: string; synced: boolean; provider: string | null }[];
   unreadAlerts?: number;
   isOwner?: boolean;
 }) {
@@ -64,9 +58,18 @@ export function Sidebar({
     .map((item) => (item.label === "Alerts" ? { ...item, badge: unreadAlerts || undefined } : item));
 
   const logo = (
-    <div className="flex items-center gap-2.5">
-      <div className="h-11 w-11 rounded-lg bg-accent/20 text-accent flex items-center justify-center font-bold text-xl shrink-0">
-        A
+    <div className="flex items-center gap-3">
+      <div className="h-[54px] w-[54px] rounded-xl bg-[#0c1222] border border-border flex items-center justify-center shrink-0">
+        <svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true">
+          <defs>
+            <linearGradient id="adcommandLogoMark" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#60a5fa" />
+              <stop offset="0.55" stopColor="#818cf8" />
+              <stop offset="1" stopColor="#a855f7" />
+            </linearGradient>
+          </defs>
+          <path fill="url(#adcommandLogoMark)" d="M12 2 L22.3 22 L16.8 22 L15.1 18.2 L8.9 18.2 L7.2 22 L1.7 22 Z" />
+        </svg>
       </div>
       <div className="leading-tight">
         <div className="font-semibold text-sm tracking-wide">
@@ -102,7 +105,7 @@ export function Sidebar({
           open ? "translate-x-0" : "-translate-x-full"
         } lg:translate-x-0 lg:static lg:z-auto lg:sticky lg:top-0 lg:w-64 lg:shrink-0 lg:bg-surface/60`}
       >
-        <div className="flex items-center justify-between gap-2 px-5 h-16 border-b border-border">
+        <div className="flex items-center justify-between gap-2 px-5 h-20 border-b border-border">
           {logo}
           <button
             onClick={() => setOpen(false)}
@@ -172,7 +175,7 @@ export function Sidebar({
                 >
                   <span
                     className="h-6 w-6 rounded-md flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                    style={{ backgroundColor: colorFor(n.name) }}
+                    style={{ backgroundColor: colorForNetwork(n.name, n.provider) }}
                   >
                     {badgeFor(n.name)}
                   </span>

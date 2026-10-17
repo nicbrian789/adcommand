@@ -3,6 +3,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { DateRangeFilter } from "@/components/dashboard/DateRangeFilter";
 import { MemberFilterTabs } from "@/components/dashboard/MemberFilterTabs";
 import { resolveDateRange } from "@/lib/dateRange";
+import { colorForNetwork } from "@/lib/networkColors";
 import { AlertTriangle, BarChart3 } from "lucide-react";
 
 type Totals = { spend: number; impressions: number; clicks: number };
@@ -103,7 +104,7 @@ export default async function AnalyticsPage({
     supabase.from("workspace_members").select("user_id").eq("workspace_id", workspace.id),
     supabase
       .from("ad_networks")
-      .select("id, name, user_id")
+      .select("id, name, user_id, provider")
       .eq("workspace_id", workspace.id)
       .order("name", { ascending: true }),
     supabase.from("campaigns").select("id, name, network_id").eq("workspace_id", workspace.id),
@@ -135,6 +136,7 @@ export default async function AnalyticsPage({
   const memberFilteredNetworks = selectedMember ? allNetworks.filter((n) => n.user_id === selectedMember) : allNetworks;
 
   const networkName = new Map(memberFilteredNetworks.map((n) => [n.id, n.name]));
+  const networkProvider = new Map(memberFilteredNetworks.map((n) => [n.id, n.provider as string | null]));
   const selectedNetwork = network && networkName.has(network) ? network : null;
   const memberFilteredNetworkIds = new Set(memberFilteredNetworks.map((n) => n.id));
   const visibleCampaigns = (campaigns ?? []).filter(
@@ -191,7 +193,12 @@ export default async function AnalyticsPage({
   const clickSeries = days.map(([day, t]) => ({ label: day.slice(5), value: t.clicks }));
 
   const networkRows = [...perNetwork.entries()]
-    .map(([id, t]) => ({ id, name: networkName.get(id) ?? "-", t }))
+    .map(([id, t]) => ({
+      id,
+      name: networkName.get(id) ?? "-",
+      color: colorForNetwork(networkName.get(id) ?? "-", networkProvider.get(id) ?? null),
+      t,
+    }))
     .sort((a, b) => b.t.spend - a.t.spend);
   const maxNetworkSpend = Math.max(...networkRows.map((n) => n.t.spend), 1);
 
@@ -240,14 +247,14 @@ export default async function AnalyticsPage({
 
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: "Spend", value: money(total.spend) },
-          { label: "Klik", value: count(total.clicks) },
-          { label: "CTR", value: `${overallCtr.toFixed(2)}%` },
-          { label: "CPC", value: `$${cpcOf(total).toFixed(4)}` },
+          { label: "Spend", value: money(total.spend), isMoney: true },
+          { label: "Klik", value: count(total.clicks), isMoney: false },
+          { label: "CTR", value: `${overallCtr.toFixed(2)}%`, isMoney: false },
+          { label: "CPC", value: `$${cpcOf(total).toFixed(4)}`, isMoney: true },
         ].map((k) => (
           <div key={k.label} className="rounded-xl border border-border bg-surface p-4">
             <div className="text-[11px] uppercase tracking-wide text-muted mb-1">{k.label}</div>
-            <div className="text-lg font-semibold tabular-nums">{k.value}</div>
+            <div className={`text-lg font-semibold tabular-nums ${k.isMoney ? "text-success" : ""}`}>{k.value}</div>
           </div>
         ))}
       </section>
@@ -282,16 +289,21 @@ export default async function AnalyticsPage({
             <tbody>
               {networkRows.map((n) => (
                 <tr key={n.id} className="border-b border-border/60 last:border-0">
-                  <td className="px-4 py-2 font-medium">{n.name}</td>
+                  <td className="px-4 py-2 font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: n.color }} />
+                      {n.name}
+                    </span>
+                  </td>
                   <td className="px-4 py-2 w-48">
                     <div className="h-2 rounded-full bg-surface-2 overflow-hidden">
-                      <div className="h-full rounded-full bg-accent" style={{ width: `${(n.t.spend / maxNetworkSpend) * 100}%` }} />
+                      <div className="h-full rounded-full" style={{ width: `${(n.t.spend / maxNetworkSpend) * 100}%`, backgroundColor: n.color }} />
                     </div>
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums">{money(n.t.spend)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-success">{money(n.t.spend)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{count(n.t.clicks)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{ctrOf(n.t).toFixed(2)}%</td>
-                  <td className="px-4 py-2 text-right tabular-nums">${cpcOf(n.t).toFixed(4)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-success">${cpcOf(n.t).toFixed(4)}</td>
                 </tr>
               ))}
             </tbody>
@@ -318,10 +330,10 @@ export default async function AnalyticsPage({
               {[...days].reverse().map(([day, t]) => (
                 <tr key={day} className="border-b border-border/60 last:border-0">
                   <td className="px-4 py-2">{day}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{money(t.spend)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-success">{money(t.spend)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{count(t.clicks)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{ctrOf(t).toFixed(2)}%</td>
-                  <td className="px-4 py-2 text-right tabular-nums">${cpcOf(t).toFixed(4)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-success">${cpcOf(t).toFixed(4)}</td>
                 </tr>
               ))}
             </tbody>

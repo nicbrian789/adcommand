@@ -24,7 +24,7 @@ export async function Topbar({ unreadAlerts = 0 }: { unreadAlerts?: number }) {
   const initial = email ? email[0].toUpperCase() : "?";
 
   return (
-    <header className="h-16 border-b border-border bg-surface/60 flex items-center gap-3 px-4 lg:px-6 sticky top-0 z-10 backdrop-blur">
+    <header className="h-20 border-b border-border bg-surface/60 flex items-center gap-3 px-4 lg:px-6 sticky top-0 z-10 backdrop-blur">
       <div className="flex-1 flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 max-w-md">
         <Search size={14} className="text-muted" />
         <input
