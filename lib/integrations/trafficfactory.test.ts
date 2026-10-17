@@ -8,11 +8,13 @@ import {
   listTrafficFactoryCampaigns,
   loginTrafficFactory,
   mapTrafficFactoryCampaignStatus,
+  isTrafficFactoryResultTotal,
   parseTrafficFactoryDailyStatRow,
   parseTrafficFactoryLoginResponse,
   parseTrafficFactorySessionToken,
   parseTrafficFactoryUser,
   pickFirstNumber,
+  unwrapTrafficFactoryStatisticsPayload,
   TF_BALANCE_KEYS,
   TF_IMPRESSION_KEYS,
   TF_SPEND_KEYS,
@@ -170,31 +172,44 @@ describe("Traffic Factory /campaigns", () => {
   });
 });
 
-describe("Traffic Factory statistics mapping", () => {
-  it("when both value and cost exist, maps spend from cost only", () => {
+describe("Traffic Factory statistics mapping (official /statistics/a/date schema)", () => {
+  it("maps hits→impressions and cost→spend; ignores value for spend", () => {
     const row = parseTrafficFactoryDailyStatRow({
       date: "2026-10-01",
       campaign_id: "55",
       cost: 1.25,
       value: 999,
-      impressions: 1000,
       hits: 777,
       clicks: 10,
+      cpm: 1.1,
+      avg_cpc: 0.12,
     });
     assert.ok(row);
     assert.equal(row!.spend, 1.25);
-    assert.equal(row!.impressions, 1000);
+    assert.equal(row!.impressions, 777);
     assert.equal(row!.clicks, 10);
     assert.equal(row!.skippedUnverifiedSpendKey, false);
-    assert.equal(pickFirstNumber({ hits: 5 }, TF_IMPRESSION_KEYS), null);
+    assert.equal(pickFirstNumber({ hits: 5 }, TF_IMPRESSION_KEYS), 5);
     assert.equal(pickFirstNumber({ value: 9 }, TF_SPEND_KEYS), null);
   });
 
-  it("keeps spend/impressions null when only unverified keys exist", () => {
+  it("prefers impressions alias when present alongside hits", () => {
+    const row = parseTrafficFactoryDailyStatRow({
+      date: "2026-10-01",
+      campaign_id: "1",
+      impressions: 100,
+      hits: 999,
+      cost: 2,
+    });
+    assert.ok(row);
+    assert.equal(row!.impressions, 100);
+  });
+
+  it("keeps spend null when only value is present (no silent value→spend)", () => {
     const row = parseTrafficFactoryDailyStatRow({ date: "2026-10-01", campaign_id: "1", value: 4, hits: 9 });
     assert.ok(row);
     assert.equal(row!.spend, null);
-    assert.equal(row!.impressions, null);
+    assert.equal(row!.impressions, 9);
     assert.equal(row!.skippedUnverifiedSpendKey, true);
   });
 
@@ -209,7 +224,18 @@ describe("Traffic Factory statistics mapping", () => {
     assert.equal(parseTrafficFactoryDailyStatRow({ cost: 1, campaign_id: "1" }), null);
   });
 
-  it("fetches /statistics/a/date with filters; account-level row has null campaign", async () => {
+  it("unwrap ignores resultTotal aggregate object", () => {
+    const rows = unwrapTrafficFactoryStatisticsPayload({
+      result: [{ date: "2026-10-01", campaign_id: "9", hits: 10, clicks: 1, cost: 0.5, value: 1 }],
+      resultTotal: { hits: 10, clicks: 1, cost: 0.5, value: 1, cpm: 50, avg_cpc: 0.5 },
+    });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].campaign_id, "9");
+    assert.equal(isTrafficFactoryResultTotal({ cost: 0.5, hits: 10, clicks: 1 }), true);
+    assert.equal(isTrafficFactoryResultTotal({ date: "2026-10-01", cost: 0.5 }), false);
+  });
+
+  it("fetches /statistics/a/date without turning resultTotal into a campaign row", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
       assert.match(url.pathname, /\/statistics\/a\/date$/);
@@ -217,9 +243,10 @@ describe("Traffic Factory statistics mapping", () => {
       assert.equal(url.searchParams.get("filter[date_to]"), "2026-10-07");
       return jsonResponse({
         result: [
-          { date: "2026-10-01", campaign_id: "9", spend: 2, impressions: 50, clicks: 3 },
-          { date: "2026-10-02", cost: 1, impressions: 10, clicks: 1 },
+          { date: "2026-10-01", campaign_id: "9", hits: 50, clicks: 3, cost: 2, value: 200 },
+          { date: "2026-10-02", cost: 1, hits: 10, clicks: 1 },
         ],
+        resultTotal: { hits: 60, clicks: 4, cost: 3, value: 300 },
       });
     };
     const { items, pagesFetched } = await getTrafficFactoryDailyStats(
@@ -231,7 +258,11 @@ describe("Traffic Factory statistics mapping", () => {
     assert.equal(pagesFetched, 1);
     assert.equal(items.length, 2);
     assert.equal(items[0].campaignExternalId, "9");
+    assert.equal(items[0].impressions, 50);
+    assert.equal(items[0].spend, 2);
     assert.equal(items[1].campaignExternalId, null);
+    // Ensure no phantom row from resultTotal
+    assert.ok(items.every((i) => i.date.startsWith("2026-10")));
   });
 
   it("surfaces HTTP failures", async () => {

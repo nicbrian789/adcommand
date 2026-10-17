@@ -12,12 +12,16 @@
 export const TRAFFIC_FACTORY_BASE_URL = "https://api.trafficfactory.com/v2";
 
 /**
- * Spend allowlist only. Responses may also include `value` — do NOT map it to spend
- * without verified semantics (could be revenue, eCPM base, or other).
+ * Spend candidates for /statistics/a/date.
+ * Official schema: `cost` (number) = campaign cost; `value` (integer) also labeled "costs"
+ * but units vs `cost` are unverified — never map `value` to spend without confirmation.
  */
 export const TF_SPEND_KEYS = ["cost", "spend", "spending"] as const;
-/** Impressions allowlist only — never map `hits` without verification. */
-export const TF_IMPRESSION_KEYS = ["impressions", "impression"] as const;
+/**
+ * Official /statistics/a/date: `hits` = campaign impressions.
+ * Also keep `impressions` / `impression` aliases.
+ */
+export const TF_IMPRESSION_KEYS = ["impressions", "impression", "hits"] as const;
 export const TF_CLICK_KEYS = ["clicks", "click"] as const;
 /** Balance only — `funds`/`credit` omitted (semantics unverified). */
 export const TF_BALANCE_KEYS = ["balance", "account_balance"] as const;
@@ -83,20 +87,58 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
-/** Unwrap common list envelopes used by TF-style JSON APIs. */
+/** Unwrap common list envelopes used by TF-style JSON APIs (campaigns, etc.). */
 export function unwrapList(data: unknown): Record<string, unknown>[] {
   if (Array.isArray(data)) {
-    return data.filter((x) => x && typeof x === "object") as Record<string, unknown>[];
+    return data.filter((x) => x && typeof x === "object" && !Array.isArray(x)) as Record<string, unknown>[];
   }
   const record = asRecord(data);
   if (!record) return [];
   for (const key of ["result", "data", "items", "campaigns", "rows", "statistics"]) {
     const v = record[key];
-    if (Array.isArray(v)) return v.filter((x) => x && typeof x === "object") as Record<string, unknown>[];
+    if (Array.isArray(v)) {
+      return v.filter((x) => x && typeof x === "object" && !Array.isArray(x)) as Record<string, unknown>[];
+    }
   }
   // Single object that looks like a row
   if ("id" in record || "date" in record || "balance" in record) return [record];
   return [];
+}
+
+/**
+ * Statistics payloads may include `resultTotal` (aggregate). Never treat it as a campaign row.
+ * Official shape: { result: StatRow[], resultTotal?: { cost, hits, clicks, ... } }
+ */
+export function unwrapTrafficFactoryStatisticsPayload(data: unknown): Record<string, unknown>[] {
+  if (Array.isArray(data)) {
+    return data.filter((x) => x && typeof x === "object" && !Array.isArray(x)) as Record<string, unknown>[];
+  }
+  const record = asRecord(data);
+  if (!record) return [];
+
+  for (const key of ["result", "data", "items", "rows", "statistics"]) {
+    const v = record[key];
+    if (Array.isArray(v)) {
+      return v.filter((x) => {
+        if (!x || typeof x !== "object" || Array.isArray(x)) return false;
+        // Guard: skip accidental aggregate objects inside the array
+        const row = x as Record<string, unknown>;
+        if (row === record.resultTotal) return false;
+        return true;
+      }) as Record<string, unknown>[];
+    }
+  }
+
+  // Do not fall back to wrapping the whole payload (would pick up resultTotal-only bodies).
+  return [];
+}
+
+/** True when an object looks like resultTotal / aggregate, not a dated campaign row. */
+export function isTrafficFactoryResultTotal(row: Record<string, unknown>): boolean {
+  if ("date" in row || "stat_date" in row || "day" in row || "datetime" in row) return false;
+  if ("campaign_id" in row || "campaignId" in row || "campaign" in row) return false;
+  // Aggregate objects typically expose totals without per-row identity fields.
+  return "cost" in row || "hits" in row || "clicks" in row || "value" in row;
 }
 
 export type TrafficFactoryLoginResult = {
@@ -281,7 +323,8 @@ async function fetchPaginatedRecords(
   sessionToken: string,
   path: string,
   extraParams: Record<string, string>,
-  fetchFn: TfFetch
+  fetchFn: TfFetch,
+  unwrap: (data: unknown) => Record<string, unknown>[] = unwrapList
 ): Promise<PaginatedResult<Record<string, unknown>>> {
   const items: Record<string, unknown>[] = [];
   let pagesFetched = 0;
@@ -306,7 +349,7 @@ async function fetchPaginatedRecords(
       throw new Error(`Respons ${path} Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
     }
 
-    const batch = unwrapList(data);
+    const batch = unwrap(data);
     pagesFetched += 1;
     items.push(...batch);
 
@@ -362,7 +405,7 @@ export function parseTrafficFactoryDailyStatRow(row: Record<string, unknown>): P
     }
   }
 
-  // `value` may coexist with `cost` — still never map `value` to spend.
+  // Official: cost → spend candidate; value → labeled costs but units unverified → never auto-map.
   const spend = pickFirstNumber(row, TF_SPEND_KEYS);
   const skippedUnverifiedSpendKey = "value" in row && spend === null;
 
@@ -395,11 +438,13 @@ export async function getTrafficFactoryDailyStats(
       date_from: dateFrom,
       date_to: dateTo,
     },
-    fetchFn
+    fetchFn,
+    unwrapTrafficFactoryStatisticsPayload
   );
 
   const parsed: ParsedDailyStat[] = [];
   for (const row of items) {
+    if (isTrafficFactoryResultTotal(row)) continue;
     const p = parseTrafficFactoryDailyStatRow(row);
     if (p) parsed.push(p);
   }
