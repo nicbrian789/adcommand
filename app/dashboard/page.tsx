@@ -241,12 +241,11 @@ export default async function DashboardPage({
                 ? " · semua anggota"
                 : ""}
           </p>
-          <div className="mt-3">
+          <div className="mt-3 space-y-2">
             <DateRangeFilter from={range.from} to={range.to} />
+            {isOwner ? <MemberFilterTabs members={members} selected={selectedMember} /> : null}
           </div>
         </div>
-
-        {isOwner ? <MemberFilterTabs members={members} selected={selectedMember} /> : null}
       </div>
 
       {!hasData ? (
