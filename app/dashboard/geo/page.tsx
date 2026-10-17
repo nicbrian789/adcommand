@@ -11,8 +11,30 @@ const empty = (): Totals => ({ spend: 0, impressions: 0, clicks: 0, conversions:
 const money = (n: number) => `$${n.toFixed(2)}`;
 const count = (n: number) => n.toLocaleString("id-ID");
 
-function flag(code: string) {
-  return String.fromCodePoint(...code.split("").map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+/**
+ * Flag emoji butuh font OS yang punya glyph bendera — Windows (termasuk Chrome di
+ * Windows) umumnya nggak punya, jadi kodenya ketampil polos ("ID" dobel) bukan bendera.
+ * Pakai gambar Twemoji biar bendera-nya sama persis di semua device/OS.
+ */
+function flagCodepoints(code: string) {
+  return code
+    .split("")
+    .map((c) => (0x1f1e6 + c.charCodeAt(0) - 65).toString(16))
+    .join("-");
+}
+
+function FlagIcon({ code }: { code: string }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${flagCodepoints(code)}.png`}
+      alt={code}
+      width={18}
+      height={18}
+      className="inline-block align-middle mr-2 rounded-sm"
+      loading="lazy"
+    />
+  );
 }
 
 async function getGeo(range: { from: string; to: string }) {
@@ -146,7 +168,7 @@ export default async function GeoPage({
                     <td className="px-4 py-3 font-medium">
                       {firstOfCountry ? (
                         <>
-                          <span className="mr-2">{flag(r.country)}</span>
+                          <FlagIcon code={r.country} />
                           {r.country}
                         </>
                       ) : null}
