@@ -62,7 +62,7 @@ export function Sidebar({
   return (
     <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-border bg-surface/60 h-screen sticky top-0">
       <div className="flex items-center gap-2 px-5 h-16 border-b border-border">
-        <div className="h-8 w-8 rounded-lg bg-accent/20 text-accent flex items-center justify-center font-bold">
+        <div className="h-10 w-10 rounded-lg bg-accent/20 text-accent flex items-center justify-center font-bold text-lg">
           A
         </div>
         <div className="leading-tight">
