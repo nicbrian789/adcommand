@@ -185,6 +185,7 @@ export async function createTrafficFactoryCampaignAction(
     name: string;
     advertiserAdType: number;
     mediaStorageTemplate: string;
+    size: string;
     categoryIds: number[];
     countries: string[];
     pricingModel: number;
@@ -227,6 +228,7 @@ export async function createTrafficFactoryCampaignAction(
       name: input.name.trim(),
       advertiserAdType: input.advertiserAdType,
       mediaStorageTemplate: input.mediaStorageTemplate,
+      size: input.size || undefined,
       categoryIds: input.categoryIds,
       countries: input.countries,
       pricingModel: input.pricingModel,

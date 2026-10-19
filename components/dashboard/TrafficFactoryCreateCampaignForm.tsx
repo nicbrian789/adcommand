@@ -33,6 +33,7 @@ export function TrafficFactoryCreateCampaignForm({
   const [advertiserAdType, setAdvertiserAdType] = useState<number>(adTypes[0]?.id ?? 0);
   const selectedAdType = adTypes.find((t) => t.id === advertiserAdType);
   const [mediaStorageTemplate, setMediaStorageTemplate] = useState<string>(selectedAdType?.mediaStorageTemplates[0] ?? "");
+  const [size, setSize] = useState<string>(selectedAdType?.sizes[0] ?? "");
   const [categoryIds, setCategoryIds] = useState<Set<number>>(new Set());
   const [categoryFilter, setCategoryFilter] = useState("");
   const [countries, setCountries] = useState("");
@@ -54,6 +55,7 @@ export function TrafficFactoryCreateCampaignForm({
     setAdvertiserAdType(id);
     const t = adTypes.find((x) => x.id === id);
     setMediaStorageTemplate(t?.mediaStorageTemplates[0] ?? "");
+    setSize(t?.sizes[0] ?? "");
   }
 
   function toggleCategory(id: number) {
@@ -89,6 +91,7 @@ export function TrafficFactoryCreateCampaignForm({
         name,
         advertiserAdType,
         mediaStorageTemplate,
+        size,
         categoryIds: [...categoryIds],
         countries: countries
           .split(",")
@@ -160,6 +163,19 @@ export function TrafficFactoryCreateCampaignForm({
             {selectedAdType!.mediaStorageTemplates.map((tag) => (
               <option key={tag} value={tag}>
                 {tag}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
+      {(selectedAdType?.sizes.length ?? 0) > 1 ? (
+        <div>
+          <label className="block text-xs text-muted mb-1.5">Ukuran</label>
+          <select value={size} onChange={(e) => setSize(e.target.value)} className={inputClass}>
+            {selectedAdType!.sizes.map((s) => (
+              <option key={s} value={s}>
+                {s}
               </option>
             ))}
           </select>

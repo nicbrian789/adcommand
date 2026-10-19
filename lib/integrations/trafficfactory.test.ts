@@ -357,6 +357,7 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
         name: "My Campaign",
         advertiserAdType: 5,
         mediaStorageTemplate: "popunder",
+        size: "300x250",
         categoryIds: [1, 2],
         countries: ["US", "ID"],
         pricingModel: 2,
@@ -373,6 +374,7 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.equal(body.name, "My Campaign");
     assert.equal(body.advertiser_ad_type, 5);
     assert.equal(body.media_storage_template, "popunder");
+    assert.equal(body.size, "300x250");
     assert.deepEqual(body.categories, { type: "targeted", elements: [1, 2] });
     // Confirmed from a live 400 response: countries targeting needs ISO3 ("USA"/"IDN"), not ISO2.
     assert.deepEqual(body.countries, { type: "targeted", elements: [{ country: "USA" }, { country: "IDN" }] });

@@ -707,6 +707,8 @@ export type CreateTrafficFactoryCampaignInput = {
   name: string;
   advertiserAdType: number;
   mediaStorageTemplate: string;
+  /** Required when the chosen ad type supports more than one size (e.g. banner formats). */
+  size?: string;
   categoryIds: number[];
   countries: string[];
   pricingModel: number;
@@ -747,6 +749,7 @@ export async function createTrafficFactoryCampaign(
     name: input.name,
     advertiser_ad_type: input.advertiserAdType,
     media_storage_template: input.mediaStorageTemplate,
+    ...(input.size ? { size: input.size } : {}),
     ...buildCampaignTargetingBody({ ...input, countries: resolveCountryIso3Codes(input.countries, countries) }),
   };
 
