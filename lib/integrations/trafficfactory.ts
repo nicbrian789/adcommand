@@ -877,3 +877,137 @@ export async function deleteTrafficFactoryCampaigns(
 ): Promise<void> {
   await bulkCampaignAction(sessionToken, "/campaigns/delete", campaignIds, fetchFn);
 }
+
+/**
+ * Creative upload. Confirmed from the live swagger.json: Traffic Factory separates "Library"
+ * (an uploaded-asset pool, shared across campaigns) from "Variation" (the creative actually
+ * attached to one campaign, referencing a Library file by id) — unlike TrafficStars' banners,
+ * which accept a direct file upload in one call. The flow here is necessarily two calls:
+ * upload to POST /library/file to get an id, then POST /campaigns/{id}/variation with that id.
+ * Only image uploads are wired up (video needs a separate video_thumb Library entry too).
+ */
+export type TrafficFactoryLibraryFile = {
+  id: number;
+  type: string;
+  url: string;
+};
+
+export async function uploadTrafficFactoryLibraryFile(
+  sessionToken: string,
+  file: File,
+  opts: { advertiserAdTypeId?: number } = {},
+  fetchFn: TfFetch = fetch
+): Promise<TrafficFactoryLibraryFile> {
+  const url = new URL(`${TRAFFIC_FACTORY_BASE_URL}/library/file`);
+  url.searchParams.set("type", "image");
+  if (opts.advertiserAdTypeId !== undefined) url.searchParams.set("advertiser_ad_type_id", String(opts.advertiserAdTypeId));
+
+  const form = new FormData();
+  form.append("file", file, file.name);
+
+  const res = await fetchFn(url, { method: "POST", headers: authHeaders(sessionToken), body: form });
+  const text = await res.text();
+  if (!res.ok) {
+    throwTrafficFactoryHttpError("/library/file", res.status, text);
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Respons /library/file Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
+  }
+  const row = asRecord(data);
+  const id = row ? pickFirstNumber(row, ["id"]) : null;
+  if (!row || id === null) {
+    throw new Error(`Respons /library/file Traffic Factory tidak terduga: ${text.slice(0, 300)}`);
+  }
+  return { id, type: pickFirstString(row, ["type"]) ?? "image", url: pickFirstString(row, ["url"]) ?? "" };
+}
+
+export type TrafficFactoryVariation = {
+  id: number;
+  name: string | null;
+  active: boolean;
+  imageUrl: string | null;
+  landingUrl: string | null;
+  statusLabel: string | null;
+};
+
+function parseVariation(row: Record<string, unknown>): TrafficFactoryVariation {
+  const calculatedStatus = asRecord(row.calculated_status);
+  return {
+    id: pickFirstNumber(row, ["idvariation", "id"]) ?? 0,
+    name: pickFirstString(row, ["name"]),
+    active: Number(row.active) === 1,
+    imageUrl: pickFirstString(row, ["imgurl"]),
+    landingUrl: pickFirstString(row, ["durl"]),
+    statusLabel: calculatedStatus ? pickFirstString(calculatedStatus, ["status"]) : pickFirstString(row, ["status"]),
+  };
+}
+
+export async function listTrafficFactoryVariations(
+  sessionToken: string,
+  campaignId: number,
+  fetchFn: TfFetch = fetch
+): Promise<TrafficFactoryVariation[]> {
+  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}/variation`, {
+    headers: authHeaders(sessionToken),
+  });
+  const text = await res.text();
+  if (!res.ok) throwTrafficFactoryHttpError(`/campaigns/${campaignId}/variation`, res.status, text);
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Respons /campaigns/${campaignId}/variation Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
+  }
+  const record = asRecord(data);
+  const rows = record && Array.isArray(record.variations) ? (record.variations as Record<string, unknown>[]) : unwrapList(data);
+  return rows.map(parseVariation);
+}
+
+export type CreateTrafficFactoryVariationInput = {
+  idLibraryFile: number;
+  durl: string;
+  name?: string;
+  brand?: string;
+};
+
+export async function createTrafficFactoryVariation(
+  sessionToken: string,
+  campaignId: number,
+  input: CreateTrafficFactoryVariationInput,
+  fetchFn: TfFetch = fetch
+): Promise<void> {
+  const form = new FormData();
+  form.append("id_library_file", String(input.idLibraryFile));
+  form.append("durl", input.durl);
+  if (input.name) form.append("name", input.name);
+  if (input.brand) form.append("brand", input.brand);
+
+  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}/variation`, {
+    method: "POST",
+    headers: authHeaders(sessionToken),
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throwTrafficFactoryHttpError(`/campaigns/${campaignId}/variation`, res.status, text);
+  }
+}
+
+export async function deleteTrafficFactoryVariation(
+  sessionToken: string,
+  campaignId: number,
+  variationId: number,
+  fetchFn: TfFetch = fetch
+): Promise<void> {
+  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}/variation/${variationId}`, {
+    method: "DELETE",
+    headers: authHeaders(sessionToken),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throwTrafficFactoryHttpError(`/campaigns/${campaignId}/variation/${variationId}`, res.status, text);
+  }
+}

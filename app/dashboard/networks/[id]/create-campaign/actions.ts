@@ -11,6 +11,8 @@ import {
 import {
   getTrafficFactorySessionToken,
   createTrafficFactoryCampaign,
+  uploadTrafficFactoryLibraryFile,
+  createTrafficFactoryVariation,
 } from "@/lib/integrations/trafficfactory";
 
 export async function createTrafficStarsCampaignAction(
@@ -260,6 +262,63 @@ export async function createTrafficFactoryCampaignAction(
   } catch (err) {
     console.error("createTrafficFactoryCampaignAction error:", err);
     const message = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga saat bikin campaign.";
+    throw new Error(message);
+  }
+}
+
+export async function createTrafficFactoryVariationAction(
+  networkId: string,
+  input: {
+    campaignId: number;
+    advertiserAdType: number;
+    durl: string;
+    images: File[];
+  }
+): Promise<{ created: number }> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Sesi kamu sudah habis. Silakan masuk lagi.");
+
+    if (!input.durl.trim() || !/^https?:\/\//i.test(input.durl.trim())) {
+      throw new Error("Landing URL wajib diisi, diawali http:// atau https://");
+    }
+    const validImages = input.images.filter((f) => f && f.size > 0);
+    if (validImages.length === 0) throw new Error("Pilih minimal 1 gambar.");
+
+    const { data: network, error: networkError } = await supabase
+      .from("ad_networks")
+      .select("id, provider")
+      .eq("id", networkId)
+      .maybeSingle();
+    if (networkError || !network || network.provider !== "traffic_factory") throw new Error("Network tidak ditemukan.");
+
+    const { data: apiKey, error: keyError } = await supabase.rpc("get_network_api_key", {
+      p_network_id: networkId,
+    });
+    if (keyError || !apiKey) throw new Error(keyError?.message ?? "API key belum tersimpan.");
+
+    const sessionToken = await getTrafficFactorySessionToken(apiKey);
+
+    let created = 0;
+    for (const file of validImages) {
+      const libraryFile = await uploadTrafficFactoryLibraryFile(sessionToken, file, {
+        advertiserAdTypeId: input.advertiserAdType,
+      });
+      await createTrafficFactoryVariation(sessionToken, input.campaignId, {
+        idLibraryFile: libraryFile.id,
+        durl: input.durl.trim(),
+      });
+      created += 1;
+    }
+
+    revalidatePath(`/dashboard/campaigns/${input.campaignId}/edit`);
+    return { created };
+  } catch (err) {
+    console.error("createTrafficFactoryVariationAction error:", err);
+    const message = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga saat upload creative.";
     throw new Error(message);
   }
 }

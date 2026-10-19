@@ -4,10 +4,11 @@ import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { getTrafficStarsAccessToken, getTrafficStarsCampaign, listTrafficStarsBanners } from "@/lib/integrations/trafficstars";
-import { getTrafficFactorySessionToken, getTrafficFactoryCampaign } from "@/lib/integrations/trafficfactory";
+import { getTrafficFactorySessionToken, getTrafficFactoryCampaign, listTrafficFactoryVariations } from "@/lib/integrations/trafficfactory";
 import { TrafficStarsEditCampaignForm } from "@/components/dashboard/TrafficStarsEditCampaignForm";
 import { TrafficStarsCampaignBanners } from "@/components/dashboard/TrafficStarsCampaignBanners";
 import { TrafficFactoryEditCampaignForm } from "@/components/dashboard/TrafficFactoryEditCampaignForm";
+import { TrafficFactoryCampaignVariations } from "@/components/dashboard/TrafficFactoryCampaignVariations";
 
 export default async function EditCampaignPage({ params }: { params: Promise<{ id: string }> }) {
   if (!isSupabaseConfigured) {
@@ -67,9 +68,13 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
 
   if (network.provider === "traffic_factory") {
     let detail;
+    let variations;
     try {
       const sessionToken = await getTrafficFactorySessionToken(apiKey);
-      detail = await getTrafficFactoryCampaign(sessionToken, Number(campaign.external_id));
+      [detail, variations] = await Promise.all([
+        getTrafficFactoryCampaign(sessionToken, Number(campaign.external_id)),
+        listTrafficFactoryVariations(sessionToken, Number(campaign.external_id)),
+      ]);
     } catch (err) {
       return (
         <div className="space-y-4">
@@ -92,7 +97,10 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
           </p>
         </div>
 
-        <TrafficFactoryEditCampaignForm campaignId={campaign.id} detail={detail} />
+        <div className="grid gap-5 lg:grid-cols-2 items-start">
+          <TrafficFactoryEditCampaignForm campaignId={campaign.id} detail={detail} />
+          <TrafficFactoryCampaignVariations campaignId={campaign.id} initialVariations={variations} />
+        </div>
       </div>
     );
   }

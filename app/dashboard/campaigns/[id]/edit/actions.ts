@@ -12,7 +12,15 @@ import {
   uploadTrafficStarsBannerImage,
   type TrafficStarsBanner,
 } from "@/lib/integrations/trafficstars";
-import { getTrafficFactorySessionToken, updateTrafficFactoryCampaign } from "@/lib/integrations/trafficfactory";
+import {
+  getTrafficFactorySessionToken,
+  updateTrafficFactoryCampaign,
+  listTrafficFactoryVariations,
+  uploadTrafficFactoryLibraryFile,
+  createTrafficFactoryVariation,
+  deleteTrafficFactoryVariation,
+  type TrafficFactoryVariation,
+} from "@/lib/integrations/trafficfactory";
 
 async function resolveTrafficStarsCampaign(campaignId: string) {
   const supabase = await createClient();
@@ -157,6 +165,58 @@ export async function updateTrafficFactoryCampaignAction(
   } catch (err) {
     console.error("updateTrafficFactoryCampaignAction error:", err);
     const message = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga saat update campaign.";
+    throw new Error(message);
+  }
+}
+
+export async function listTrafficFactoryVariationsAction(campaignId: string): Promise<TrafficFactoryVariation[]> {
+  try {
+    const { sessionToken, externalId } = await resolveTrafficFactoryCampaign(campaignId);
+    return await listTrafficFactoryVariations(sessionToken, externalId);
+  } catch (err) {
+    console.error("listTrafficFactoryVariationsAction error:", err);
+    const message = err instanceof Error ? err.message : "Gagal ambil daftar creative.";
+    throw new Error(message);
+  }
+}
+
+export async function addTrafficFactoryVariationAction(
+  campaignId: string,
+  input: { durl: string; images: File[] }
+): Promise<{ created: number }> {
+  try {
+    if (!input.durl.trim() || !/^https?:\/\//i.test(input.durl.trim())) {
+      throw new Error("Landing URL wajib diisi, diawali http:// atau https://");
+    }
+    const validImages = input.images.filter((f) => f && f.size > 0);
+    if (validImages.length === 0) throw new Error("Pilih minimal 1 gambar.");
+
+    const { sessionToken, externalId } = await resolveTrafficFactoryCampaign(campaignId);
+
+    let created = 0;
+    for (const file of validImages) {
+      const libraryFile = await uploadTrafficFactoryLibraryFile(sessionToken, file);
+      await createTrafficFactoryVariation(sessionToken, externalId, { idLibraryFile: libraryFile.id, durl: input.durl.trim() });
+      created += 1;
+    }
+
+    revalidatePath(`/dashboard/campaigns/${campaignId}/edit`);
+    return { created };
+  } catch (err) {
+    console.error("addTrafficFactoryVariationAction error:", err);
+    const message = err instanceof Error ? err.message : "Gagal upload creative.";
+    throw new Error(message);
+  }
+}
+
+export async function deleteTrafficFactoryVariationAction(campaignId: string, variationId: number): Promise<void> {
+  try {
+    const { sessionToken, externalId } = await resolveTrafficFactoryCampaign(campaignId);
+    await deleteTrafficFactoryVariation(sessionToken, externalId, variationId);
+    revalidatePath(`/dashboard/campaigns/${campaignId}/edit`);
+  } catch (err) {
+    console.error("deleteTrafficFactoryVariationAction error:", err);
+    const message = err instanceof Error ? err.message : "Gagal hapus creative.";
     throw new Error(message);
   }
 }

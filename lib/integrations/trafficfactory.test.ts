@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 import {
   canPersistTrafficFactoryBalance,
   createTrafficFactoryCampaign,
+  createTrafficFactoryVariation,
   deleteTrafficFactoryCampaigns,
+  deleteTrafficFactoryVariation,
   getTrafficFactoryAdvertiserAdTypes,
   getTrafficFactoryCampaign,
   getTrafficFactoryCategories,
@@ -12,6 +14,7 @@ import {
   getTrafficFactorySessionToken,
   getTrafficFactoryUser,
   listTrafficFactoryCampaigns,
+  listTrafficFactoryVariations,
   loginTrafficFactory,
   mapTrafficFactoryCampaignStatus,
   isTrafficFactoryResultTotal,
@@ -24,6 +27,7 @@ import {
   setTrafficFactoryCampaignsRunState,
   unwrapTrafficFactoryStatisticsPayload,
   updateTrafficFactoryCampaign,
+  uploadTrafficFactoryLibraryFile,
   TF_BALANCE_KEYS,
   TF_IMPRESSION_KEYS,
   TF_SPEND_KEYS,
@@ -562,5 +566,79 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
       return jsonResponse({ message: "deleted", campaigns: [] });
     };
     await deleteTrafficFactoryCampaigns("session", [1, 2], fetchFn);
+  });
+});
+
+describe("Traffic Factory creative upload (Library -> Variation, two separate calls)", () => {
+  it("uploads a file to the Library with type=image and returns its id", async () => {
+    const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/library\/file$/);
+      assert.equal(init?.method, "POST");
+      assert.equal(url.searchParams.get("type"), "image");
+      assert.equal(url.searchParams.get("advertiser_ad_type_id"), "5");
+      assert.ok(init?.body instanceof FormData);
+      return jsonResponse({ id: 99, type: "image", width: 300, height: 250, url: "https://cdn.example/99.png" });
+    };
+    const file = new File(["fake-bytes"], "banner.png", { type: "image/png" });
+    const result = await uploadTrafficFactoryLibraryFile("session", file, { advertiserAdTypeId: 5 }, fetchFn);
+    assert.equal(result.id, 99);
+    assert.equal(result.url, "https://cdn.example/99.png");
+  });
+
+  it("creates a variation referencing the uploaded Library file id, not a raw file upload", async () => {
+    let capturedForm: FormData | undefined;
+    const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/campaigns\/42\/variation$/);
+      assert.equal(init?.method, "POST");
+      capturedForm = init?.body as FormData;
+      return new Response("", { status: 200 });
+    };
+    await createTrafficFactoryVariation("session", 42, { idLibraryFile: 99, durl: "https://example.com/offer" }, fetchFn);
+    assert.equal(capturedForm?.get("id_library_file"), "99");
+    assert.equal(capturedForm?.get("durl"), "https://example.com/offer");
+    assert.equal(capturedForm?.get("file"), null); // the file itself was never part of this call
+  });
+
+  it("lists variations, reading imgurl/durl/idvariation per the live VariationDetails schema", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/campaigns\/42\/variation$/);
+      return jsonResponse({
+        variations: [
+          {
+            idvariation: 7,
+            name: "Promo banner",
+            active: 1,
+            imgurl: "https://cdn.example/7.png",
+            durl: "https://example.com/offer",
+            calculated_status: { status: "Pending" },
+          },
+        ],
+      });
+    };
+    const variations = await listTrafficFactoryVariations("session", 42, fetchFn);
+    assert.equal(variations.length, 1);
+    assert.equal(variations[0].id, 7);
+    assert.equal(variations[0].active, true);
+    assert.equal(variations[0].imageUrl, "https://cdn.example/7.png");
+    assert.equal(variations[0].statusLabel, "Pending");
+  });
+
+  it("deletes (archives) a variation via DELETE /campaigns/{id}/variation/{id}", async () => {
+    const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      assert.equal(init?.method, "DELETE");
+      assert.match(url.pathname, /\/campaigns\/42\/variation\/7$/);
+      return jsonResponse({ message: "archived" });
+    };
+    await deleteTrafficFactoryVariation("session", 42, 7, fetchFn);
+  });
+
+  it("surfaces HTTP failures from the Library upload with the response body", async () => {
+    const fetchFn: TfFetch = async () => jsonResponse({ message: ["File too large"] }, 400);
+    const file = new File(["fake-bytes"], "banner.png", { type: "image/png" });
+    await assert.rejects(() => uploadTrafficFactoryLibraryFile("session", file, {}, fetchFn), /File too large/);
   });
 });

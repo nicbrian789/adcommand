@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, CheckCircle2 } from "lucide-react";
-import { createTrafficFactoryCampaignAction } from "@/app/dashboard/networks/[id]/create-campaign/actions";
+import { Loader2, CheckCircle2, Upload } from "lucide-react";
+import { createTrafficFactoryCampaignAction, createTrafficFactoryVariationAction } from "@/app/dashboard/networks/[id]/create-campaign/actions";
+import { FilePreviewThumbnails } from "@/components/dashboard/FilePreviewThumbnails";
 import type { TrafficFactoryAdvertiserAdType, TrafficFactoryCategory } from "@/lib/integrations/trafficfactory";
 
 const inputClass =
@@ -44,6 +45,12 @@ export function TrafficFactoryCreateCampaignForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ id: number } | null>(null);
+
+  const [durl, setDurl] = useState("");
+  const [images, setImages] = useState<File[]>([]);
+  const [variationLoading, setVariationLoading] = useState(false);
+  const [variationError, setVariationError] = useState<string | null>(null);
+  const [variationDone, setVariationDone] = useState<{ created: number } | null>(null);
 
   const filteredCategories = useMemo(() => {
     const q = categoryFilter.trim().toLowerCase();
@@ -110,15 +117,33 @@ export function TrafficFactoryCreateCampaignForm({
     }
   }
 
-  if (success) {
+  async function handleVariationSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!success) return;
+    setVariationLoading(true);
+    setVariationError(null);
+    try {
+      const result = await createTrafficFactoryVariationAction(networkId, {
+        campaignId: success.id,
+        advertiserAdType,
+        durl,
+        images,
+      });
+      setVariationDone(result);
+    } catch (err) {
+      setVariationError(err instanceof Error ? err.message : "Gagal upload creative.");
+    } finally {
+      setVariationLoading(false);
+    }
+  }
+
+  if (success && variationDone) {
     return (
       <div className="rounded-xl border border-success/30 bg-success/10 p-6 flex flex-col items-center text-center gap-2 max-w-lg">
         <CheckCircle2 className="text-success" size={28} />
-        <p className="font-medium">Campaign berhasil dibuat di Traffic Factory</p>
-        <p className="text-sm text-muted">ID campaign: {success.id}</p>
-        <p className="text-xs text-muted mt-1">
-          Status awalnya Draft — tambahin creative (variation) langsung dari dashboard Traffic Factory dulu sebelum campaign ini bisa
-          jalan (belum bisa dari ADCOMMAND).
+        <p className="font-medium">Campaign & creative berhasil dibuat di Traffic Factory</p>
+        <p className="text-sm text-muted">
+          ID campaign: {success.id} · {variationDone.created} creative dibuat
         </p>
         <button
           onClick={() => router.push("/dashboard/networks")}
@@ -126,6 +151,76 @@ export function TrafficFactoryCreateCampaignForm({
         >
           Kembali ke Networks
         </button>
+      </div>
+    );
+  }
+
+  if (success) {
+    return (
+      <div className="space-y-4 max-w-lg">
+        <div className="rounded-xl border border-success/30 bg-success/10 p-4 flex items-center gap-3">
+          <CheckCircle2 className="text-success shrink-0" size={20} />
+          <p className="text-sm">Campaign dibuat (ID {success.id}). Lanjut isi landing URL &amp; upload gambar creative-nya.</p>
+        </div>
+
+        <form onSubmit={handleVariationSubmit} className="rounded-xl border border-border bg-surface p-6 space-y-4">
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Landing URL</label>
+            <input
+              type="text"
+              required
+              value={durl}
+              onChange={(e) => setDurl(e.target.value)}
+              placeholder="https://domain-kamu.com/offer"
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-muted mb-1.5">
+              Gambar — klik lagi buat nambah lebih dari 1, tiap gambar jadi 1 creative terpisah
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => {
+                const picked = e.target.files ? Array.from(e.target.files) : [];
+                setImages((prev) => [...prev, ...picked]);
+                e.target.value = "";
+              }}
+              className="w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-accent file:text-white file:px-3 file:py-1.5 file:text-xs file:font-medium"
+            />
+            <p className="text-xs text-muted mt-1">
+              Video belum didukung dari sini — upload video manual lewat website Traffic Factory kalau perlu.
+            </p>
+            <FilePreviewThumbnails files={images} onRemove={(i) => setImages((prev) => prev.filter((_, idx) => idx !== i))} />
+          </div>
+
+          {variationError ? (
+            <div className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger whitespace-pre-wrap">
+              {variationError}
+            </div>
+          ) : null}
+
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={variationLoading}
+              className="flex items-center gap-2 rounded-lg bg-accent text-white text-sm font-medium px-4 py-2.5 hover:bg-accent/90 disabled:opacity-60"
+            >
+              {variationLoading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              Upload Creative
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/dashboard/networks")}
+              className="text-xs text-muted hover:text-foreground"
+            >
+              Lewati, isi nanti dari halaman Edit
+            </button>
+          </div>
+        </form>
       </div>
     );
   }
