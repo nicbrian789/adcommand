@@ -547,6 +547,60 @@ export async function getTrafficFactoryCategories(
   return categories;
 }
 
+export type TrafficFactoryCountry = {
+  id: number;
+  iso2: string;
+  iso3: string;
+  name: string;
+};
+
+export async function getTrafficFactoryCountries(
+  sessionToken: string,
+  fetchFn: TfFetch = fetch
+): Promise<TrafficFactoryCountry[]> {
+  const { items } = await fetchPaginatedRecords(sessionToken, "/collections/countries", {}, fetchFn);
+  const countries: TrafficFactoryCountry[] = [];
+  for (const row of items) {
+    const iso2 = pickFirstString(row, ["iso2"]);
+    const iso3 = pickFirstString(row, ["iso3"]);
+    if (!iso2 || !iso3) continue;
+    const name = pickFirstString(row, ["short_name", "long_name"]) ?? iso3;
+    countries.push({ id: pickFirstNumber(row, ["id"]) ?? 0, iso2: iso2.toUpperCase(), iso3: iso3.toUpperCase(), name });
+  }
+  return countries;
+}
+
+/**
+ * Campaign country targeting needs ISO3 codes ("IDN", "USA"), confirmed from a real 400 response
+ * ("Campaign countries ID is invalid. Valid values: 'XXX', 'AFG', 'ALB', ..." — all ISO3), while
+ * the rest of this app works in ISO2 ("ID", "US"). Resolves either against Traffic Factory's own
+ * /collections/countries so the mapping can never drift from what the API actually accepts.
+ */
+function resolveCountryIso3Codes(requested: string[], countries: TrafficFactoryCountry[]): string[] {
+  const byIso2 = new Map(countries.map((c) => [c.iso2, c.iso3]));
+  const validIso3 = new Set(countries.map((c) => c.iso3));
+  const resolved: string[] = [];
+  const invalid: string[] = [];
+  for (const raw of requested) {
+    const code = raw.trim().toUpperCase();
+    if (!code) continue;
+    if (validIso3.has(code)) {
+      resolved.push(code);
+      continue;
+    }
+    const mapped = byIso2.get(code);
+    if (mapped) {
+      resolved.push(mapped);
+      continue;
+    }
+    invalid.push(raw);
+  }
+  if (invalid.length > 0) {
+    throw new Error(`Kode negara nggak dikenali di Traffic Factory: ${invalid.join(", ")}. Pakai kode ISO 2 huruf (ID, US) atau 3 huruf (IDN, USA).`);
+  }
+  return resolved;
+}
+
 export type TrafficFactoryCampaignDetail = {
   id: number;
   name: string;
@@ -668,11 +722,12 @@ export async function createTrafficFactoryCampaign(
   input: CreateTrafficFactoryCampaignInput,
   fetchFn: TfFetch = fetch
 ): Promise<{ id: number }> {
+  const countries = await getTrafficFactoryCountries(sessionToken, fetchFn);
   const body: Record<string, unknown> = {
     name: input.name,
     advertiser_ad_type: input.advertiserAdType,
     media_storage_template: input.mediaStorageTemplate,
-    ...buildCampaignTargetingBody(input),
+    ...buildCampaignTargetingBody({ ...input, countries: resolveCountryIso3Codes(input.countries, countries) }),
   };
 
   const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns`, {
@@ -713,7 +768,11 @@ export async function updateTrafficFactoryCampaign(
   const body: Record<string, unknown> = {};
   if (input.name !== undefined) body.name = input.name;
   if (input.categoryIds !== undefined) body.categories = { type: "targeted", elements: input.categoryIds };
-  if (input.countries !== undefined) body.countries = { type: "targeted", elements: input.countries.map((c) => ({ country: c })) };
+  if (input.countries !== undefined) {
+    const countries = await getTrafficFactoryCountries(sessionToken, fetchFn);
+    const iso3 = resolveCountryIso3Codes(input.countries, countries);
+    body.countries = { type: "targeted", elements: iso3.map((c) => ({ country: c })) };
+  }
   if (input.pricingModel !== undefined && input.price !== undefined) {
     body.pricing = { model: input.pricingModel, price: input.price };
   }

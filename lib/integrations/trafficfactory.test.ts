@@ -37,6 +37,13 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+const COUNTRY_FIXTURE = {
+  result: [
+    { id: 1, short_name: "United States", long_name: "United States of America", iso2: "US", iso3: "USA" },
+    { id: 2, short_name: "Indonesia", long_name: "Republic of Indonesia", iso2: "ID", iso3: "IDN" },
+  ],
+};
+
 describe("Traffic Factory auth (official login contract)", () => {
   it("parses official login body: token preferred over refresh_token", () => {
     const parsed = parseTrafficFactoryLoginResponse(
@@ -327,12 +334,13 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.equal(categories[0].id, 1);
   });
 
-  it("creates a campaign with the nested collection/pricing shape, then resolves its id by name", async () => {
+  it("creates a campaign with the nested collection/pricing shape, resolving ISO2 countries to ISO3, then resolves its id by name", async () => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
     const fetchFn: TfFetch = async (input, init) => {
       const url = new URL(String(input));
       const method = init?.method ?? "GET";
       calls.push({ method, path: url.pathname + url.search, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       if (method === "POST" && url.pathname === "/v2/campaigns") {
         return jsonResponse({}, 200); // 200 body isn't documented — must not be relied on
       }
@@ -366,15 +374,70 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.equal(body.advertiser_ad_type, 5);
     assert.equal(body.media_storage_template, "popunder");
     assert.deepEqual(body.categories, { type: "targeted", elements: [1, 2] });
-    assert.deepEqual(body.countries, { type: "targeted", elements: [{ country: "US" }, { country: "ID" }] });
+    // Confirmed from a live 400 response: countries targeting needs ISO3 ("USA"/"IDN"), not ISO2.
+    assert.deepEqual(body.countries, { type: "targeted", elements: [{ country: "USA" }, { country: "IDN" }] });
     assert.deepEqual(body.pricing, { model: 2, price: 0.5 });
     assert.equal(body.max_daily_budget, 10);
     assert.equal(body.daily_limit_type, 1);
     assert.equal(body.total_budget_limit, 100);
   });
 
+  it("accepts ISO3 country codes directly, passing them through unchanged", async () => {
+    let postBody: Record<string, unknown> | undefined;
+    const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
+      if (init?.method === "POST") {
+        postBody = JSON.parse(String(init.body));
+        return jsonResponse({});
+      }
+      return jsonResponse({ result: [{ id: 1, name: "ISO3 test" }] });
+    };
+    await createTrafficFactoryCampaign(
+      "session",
+      {
+        name: "ISO3 test",
+        advertiserAdType: 1,
+        mediaStorageTemplate: "popunder",
+        categoryIds: [1],
+        countries: ["IDN"],
+        pricingModel: 2,
+        price: 1,
+      },
+      fetchFn
+    );
+    assert.deepEqual(postBody?.countries, { type: "targeted", elements: [{ country: "IDN" }] });
+  });
+
+  it("rejects a country code Traffic Factory doesn't recognize instead of sending it blind", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
+      return jsonResponse({ error: "should not be reached" }, 500);
+    };
+    await assert.rejects(
+      () =>
+        createTrafficFactoryCampaign(
+          "session",
+          {
+            name: "Bad country",
+            advertiserAdType: 1,
+            mediaStorageTemplate: "popunder",
+            categoryIds: [1],
+            countries: ["ZZ"],
+            pricingModel: 2,
+            price: 1,
+          },
+          fetchFn
+        ),
+      /Kode negara nggak dikenali/
+    );
+  });
+
   it("prefers an exact name match over a highest-id fallback when resolving the created campaign", async () => {
     const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       if (init?.method === "POST") return jsonResponse({});
       return jsonResponse({
         result: [
@@ -401,6 +464,8 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
 
   it("throws a clear error when the created campaign can't be found by name afterwards", async () => {
     const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       if (init?.method === "POST") return jsonResponse({});
       return jsonResponse({ result: [] });
     };
@@ -434,6 +499,19 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     };
     await updateTrafficFactoryCampaign("session", 123, { name: "New Name", pricingModel: 1, price: 2 }, fetchFn);
     assert.deepEqual(capturedBody, { name: "New Name", pricing: { model: 1, price: 2 } });
+  });
+
+  it("resolves ISO2 to ISO3 on update too, only when countries is actually being changed", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
+      assert.equal(init?.method, "PUT");
+      capturedBody = JSON.parse(String(init?.body));
+      return new Response("", { status: 200 });
+    };
+    await updateTrafficFactoryCampaign("session", 123, { countries: ["ID"] }, fetchFn);
+    assert.deepEqual(capturedBody, { countries: { type: "targeted", elements: [{ country: "IDN" }] } });
   });
 
   it("parses a campaign detail response, splitting out the calculated status label", async () => {
