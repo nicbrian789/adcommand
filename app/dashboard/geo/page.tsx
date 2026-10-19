@@ -14,22 +14,17 @@ const count = (n: number) => n.toLocaleString("id-ID");
 /**
  * Flag emoji butuh font OS yang punya glyph bendera — Windows (termasuk Chrome di
  * Windows) umumnya nggak punya, jadi kodenya ketampil polos ("ID" dobel) bukan bendera.
- * Pakai gambar Twemoji biar bendera-nya sama persis di semua device/OS.
+ * Sebelumnya pakai gambar Twemoji dari jsdelivr, tapi URL-nya ngandung "twitter" jadi
+ * sering kena block ad-blocker/ekstensi privasi di desktop (gambar gagal load, browser
+ * nampilin teks alt="ID" di sampingnya — makanya ketampil "ID ID"). flagcdn.com itu CDN
+ * khusus bendera negara, bukan terasosiasi "twitter", jadi nggak kena filter yang sama.
  */
-function flagCodepoints(code: string) {
-  return code
-    .split("")
-    .map((c) => (0x1f1e6 + c.charCodeAt(0) - 65).toString(16))
-    .join("-");
-}
-
 function FlagIcon({ code }: { code: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={`https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${flagCodepoints(code)}.png`}
+      src={`https://flagcdn.com/h20/${code.toLowerCase()}.png`}
       alt={code}
-      width={18}
       height={18}
       className="inline-block align-middle mr-2 rounded-sm"
       loading="lazy"
