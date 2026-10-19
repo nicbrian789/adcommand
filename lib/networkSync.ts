@@ -605,28 +605,37 @@ export async function runNetworkSync(
   const { data: beforeCampaigns } = await supabase.from("campaigns").select("id").eq("network_id", network.id);
   const beforeIds = new Set((beforeCampaigns ?? []).map((c) => c.id));
 
+  const syncOnce = () =>
+    network.provider === "adsterra"
+      ? syncAdsterra(supabase, network, apiKey)
+      : network.provider === "juicyads"
+        ? syncJuicyAds(supabase, network, apiKey)
+        : network.provider === "trafficjunky"
+          ? syncTrafficJunky(supabase, network, apiKey)
+          : network.provider === "traffic_factory"
+            ? syncTrafficFactory(supabase, network, apiKey)
+            : syncTrafficStars(supabase, network, apiKey);
+
   let result: { campaigns: number; days: number };
   try {
-    result =
-      network.provider === "adsterra"
-        ? await syncAdsterra(supabase, network, apiKey)
-        : network.provider === "juicyads"
-          ? await syncJuicyAds(supabase, network, apiKey)
-          : network.provider === "trafficjunky"
-            ? await syncTrafficJunky(supabase, network, apiKey)
-            : network.provider === "traffic_factory"
-              ? await syncTrafficFactory(supabase, network, apiKey)
-              : await syncTrafficStars(supabase, network, apiKey);
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga.";
-    await raiseAlert(supabase, {
-      workspaceId: network.workspace_id,
-      networkId: network.id,
-      type: "sync_failed",
-      title: `[${ownerLabel}] Sync gagal: ${network.name}`,
-      message: `Network ${networkTypeLabel(network.provider)} "${network.name}" (punya ${ownerLabel}) gagal sinkron. Alasan: ${reason}`,
-    });
-    throw err;
+    result = await syncOnce();
+  } catch {
+    // A momentary hiccup on the provider's side (e.g. a transient 4xx) shouldn't page anyone —
+    // retry once before treating it as a real failure worth alerting on.
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    try {
+      result = await syncOnce();
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga.";
+      await raiseAlert(supabase, {
+        workspaceId: network.workspace_id,
+        networkId: network.id,
+        type: "sync_failed",
+        title: `[${ownerLabel}] Sync gagal: ${network.name}`,
+        message: `Network ${networkTypeLabel(network.provider)} "${network.name}" (punya ${ownerLabel}) gagal sinkron. Alasan: ${reason}`,
+      });
+      throw err;
+    }
   }
 
   await supabase.from("ad_networks").update({ last_synced_at: new Date().toISOString() }).eq("id", network.id);

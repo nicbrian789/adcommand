@@ -49,11 +49,11 @@ export async function getTrafficJunkyStats(
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
   });
 
+  const text = await res.text();
   if (!res.ok) {
-    throw new Error(`Gagal mengambil statistik TrafficJunky (${res.status})`);
+    throw new Error(`Gagal mengambil statistik TrafficJunky (${res.status}). Respons: ${text.slice(0, 300)}`);
   }
 
-  const text = await res.text();
   let data: Record<string, unknown>;
   try {
     data = JSON.parse(text) as Record<string, unknown>;
