@@ -209,7 +209,8 @@ export async function createTrafficFactoryCampaignAction(
     if (network.provider !== "traffic_factory") throw new Error("Network ini bukan Traffic Factory.");
 
     if (!input.name.trim()) throw new Error("Nama campaign wajib diisi.");
-    if (!input.advertiserAdType) throw new Error("Pilih jenis iklan dulu.");
+    // Not `!input.advertiserAdType` — Traffic Factory's ad type ids can legitimately be 0.
+    if (!Number.isFinite(input.advertiserAdType)) throw new Error("Pilih jenis iklan dulu.");
     if (!input.mediaStorageTemplate) throw new Error("Pilih format media dulu.");
     if (input.categoryIds.length === 0) throw new Error("Pilih minimal 1 kategori.");
     if (input.countries.length === 0) throw new Error("Pilih minimal 1 negara target.");
