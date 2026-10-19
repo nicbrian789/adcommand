@@ -376,10 +376,12 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.deepEqual(body.categories, { type: "targeted", elements: [1, 2] });
     // Confirmed from a live 400 response: countries targeting needs ISO3 ("USA"/"IDN"), not ISO2.
     assert.deepEqual(body.countries, { type: "targeted", elements: [{ country: "USA" }, { country: "IDN" }] });
-    assert.deepEqual(body.pricing, { model: 2, price: 0.5 });
-    assert.equal(body.max_daily_budget, 10);
+    // Confirmed from a live 400 response ("...specify amount in cents"): money fields are
+    // integer cents on this API, so $0.50/$10/$100 become 50/1000/10000.
+    assert.deepEqual(body.pricing, { model: 2, price: 50 });
+    assert.equal(body.max_daily_budget, 1000);
     assert.equal(body.daily_limit_type, 1);
-    assert.equal(body.total_budget_limit, 100);
+    assert.equal(body.total_budget_limit, 10000);
   });
 
   it("accepts ISO3 country codes directly, passing them through unchanged", async () => {
@@ -498,7 +500,7 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
       return new Response("", { status: 200 });
     };
     await updateTrafficFactoryCampaign("session", 123, { name: "New Name", pricingModel: 1, price: 2 }, fetchFn);
-    assert.deepEqual(capturedBody, { name: "New Name", pricing: { model: 1, price: 2 } });
+    assert.deepEqual(capturedBody, { name: "New Name", pricing: { model: 1, price: 200 } });
   });
 
   it("resolves ISO2 to ISO3 on update too, only when countries is actually being changed", async () => {
@@ -514,7 +516,7 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.deepEqual(capturedBody, { countries: { type: "targeted", elements: [{ country: "IDN" }] } });
   });
 
-  it("parses a campaign detail response, splitting out the calculated status label", async () => {
+  it("parses a campaign detail response, converting cents back to dollars", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
       assert.match(url.pathname, /\/campaigns\/123$/);
@@ -523,9 +525,9 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
         name: "Promo",
         status: 1,
         calculated_status: { id: 1, status: "Running" },
-        price: 0.5,
+        price: 50, // cents -> $0.50
         pricing_model: 2,
-        max_daily_budget: 10,
+        max_daily_budget: 1000, // cents -> $10
         total_budget_limit: 0,
         advertiser_ad_type: 5,
         media_storage_template: "popunder",
@@ -535,6 +537,7 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.equal(detail.status, 1);
     assert.equal(detail.statusLabel, "Running");
     assert.equal(detail.price, 0.5);
+    assert.equal(detail.maxDailyBudget, 10);
     assert.equal(detail.pricingModel, 2);
   });
 

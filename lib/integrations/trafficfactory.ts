@@ -615,6 +615,22 @@ export type TrafficFactoryCampaignDetail = {
   mediaStorageTemplate: string | null;
 };
 
+/**
+ * Confirmed from a live 400 response: "Campaign max daily budget should be greater than or equal
+ * to 2000. Please specify amount in cents." — money fields on campaign create/update/read
+ * (price, max_daily_budget, total_budget_limit) are integer cents, not dollar floats, unlike the
+ * /statistics/* endpoints (already verified in production to be plain dollars). total_budget_limit
+ * is inferred to share this (same integer type, same sibling field in the same schema) rather than
+ * separately confirmed.
+ */
+function centsToDollars(cents: number | null): number | null {
+  return cents === null ? null : Math.round(cents) / 100;
+}
+
+function dollarsToCents(dollars: number): number {
+  return Math.round(dollars * 100);
+}
+
 function parseCampaignDetail(row: Record<string, unknown>): TrafficFactoryCampaignDetail {
   const calculatedStatus = asRecord(row.calculated_status);
   return {
@@ -622,10 +638,10 @@ function parseCampaignDetail(row: Record<string, unknown>): TrafficFactoryCampai
     name: pickFirstString(row, ["name"]) ?? "",
     status: pickFirstNumber(row, ["status"]) ?? 0,
     statusLabel: calculatedStatus ? pickFirstString(calculatedStatus, ["status"]) : null,
-    price: pickFirstNumber(row, ["price"]),
+    price: centsToDollars(pickFirstNumber(row, ["price"])),
     pricingModel: pickFirstNumber(row, ["pricing_model"]),
-    maxDailyBudget: pickFirstNumber(row, ["max_daily_budget"]),
-    totalBudgetLimit: pickFirstNumber(row, ["total_budget_limit"]),
+    maxDailyBudget: centsToDollars(pickFirstNumber(row, ["max_daily_budget"])),
+    totalBudgetLimit: centsToDollars(pickFirstNumber(row, ["total_budget_limit"])),
     advertiserAdType: pickFirstNumber(row, ["advertiser_ad_type"]),
     mediaStorageTemplate: pickFirstString(row, ["media_storage_template"]),
   };
@@ -706,13 +722,13 @@ function buildCampaignTargetingBody(input: {
   const body: Record<string, unknown> = {
     categories: { type: "targeted", elements: input.categoryIds },
     countries: { type: "targeted", elements: input.countries.map((c) => ({ country: c })) },
-    pricing: { model: input.pricingModel, price: input.price },
+    pricing: { model: input.pricingModel, price: dollarsToCents(input.price) },
   };
   if (input.maxDailyBudget) {
-    body.max_daily_budget = input.maxDailyBudget;
+    body.max_daily_budget = dollarsToCents(input.maxDailyBudget);
     body.daily_limit_type = 1; // 0 None, 1 Budget, 2 Impressions
   }
-  if (input.totalBudgetLimit) body.total_budget_limit = input.totalBudgetLimit;
+  if (input.totalBudgetLimit) body.total_budget_limit = dollarsToCents(input.totalBudgetLimit);
   return body;
 }
 
@@ -774,13 +790,13 @@ export async function updateTrafficFactoryCampaign(
     body.countries = { type: "targeted", elements: iso3.map((c) => ({ country: c })) };
   }
   if (input.pricingModel !== undefined && input.price !== undefined) {
-    body.pricing = { model: input.pricingModel, price: input.price };
+    body.pricing = { model: input.pricingModel, price: dollarsToCents(input.price) };
   }
   if (input.maxDailyBudget !== undefined) {
-    body.max_daily_budget = input.maxDailyBudget;
+    body.max_daily_budget = dollarsToCents(input.maxDailyBudget);
     body.daily_limit_type = input.maxDailyBudget > 0 ? 1 : 0;
   }
-  if (input.totalBudgetLimit !== undefined) body.total_budget_limit = input.totalBudgetLimit;
+  if (input.totalBudgetLimit !== undefined) body.total_budget_limit = dollarsToCents(input.totalBudgetLimit);
 
   const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}`, {
     method: "PUT",
