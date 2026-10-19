@@ -601,6 +601,51 @@ function resolveCountryIso3Codes(requested: string[], countries: TrafficFactoryC
   return resolved;
 }
 
+/** Simple {id, name} dictionaries — devices, browsers, operating systems, languages all share this shape. */
+export type TrafficFactoryDictItem = { id: number; name: string };
+
+async function getTrafficFactoryDict(path: string, sessionToken: string, fetchFn: TfFetch): Promise<TrafficFactoryDictItem[]> {
+  const { items } = await fetchPaginatedRecords(sessionToken, path, {}, fetchFn);
+  const out: TrafficFactoryDictItem[] = [];
+  for (const row of items) {
+    const id = pickFirstNumber(row, ["id"]);
+    const name = pickFirstString(row, ["name"]);
+    if (id === null || !name) continue;
+    out.push({ id, name });
+  }
+  return out;
+}
+
+export function getTrafficFactoryDevices(sessionToken: string, fetchFn: TfFetch = fetch) {
+  return getTrafficFactoryDict("/collections/devices", sessionToken, fetchFn);
+}
+
+export function getTrafficFactoryBrowsers(sessionToken: string, fetchFn: TfFetch = fetch) {
+  return getTrafficFactoryDict("/collections/browsers", sessionToken, fetchFn);
+}
+
+export function getTrafficFactoryOperatingSystems(sessionToken: string, fetchFn: TfFetch = fetch) {
+  return getTrafficFactoryDict("/collections/operating-systems", sessionToken, fetchFn);
+}
+
+export function getTrafficFactoryLanguages(sessionToken: string, fetchFn: TfFetch = fetch) {
+  return getTrafficFactoryDict("/collections/languages", sessionToken, fetchFn);
+}
+
+export type TrafficFactoryMultiStringList = { targeted: string[]; blocked: string[] };
+
+function parseMultiStringCollection(value: unknown): TrafficFactoryMultiStringList {
+  const row = asRecord(value);
+  const toStrings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  return { targeted: toStrings(row?.targeted), blocked: toStrings(row?.blocked) };
+}
+
+function parseIntCollectionIds(value: unknown): number[] {
+  const row = asRecord(value);
+  const elements = row?.elements;
+  return Array.isArray(elements) ? elements.filter((x): x is number => typeof x === "number") : [];
+}
+
 export type TrafficFactoryCampaignDetail = {
   id: number;
   name: string;
@@ -613,6 +658,24 @@ export type TrafficFactoryCampaignDetail = {
   totalBudgetLimit: number | null;
   advertiserAdType: number | null;
   mediaStorageTemplate: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  totalImpressions: number | null;
+  maxDailyImpressions: number | null;
+  /** Read-model capping shape ({quantity,frequency,level}) differs from the write-model
+   * frequency_capping ({enabled,impressions,minutes,level}) — mapped here for display. */
+  frequencyCappingImpressions: number | null;
+  frequencyCappingMinutes: number | null;
+  /** ISO2 (not ISO3) — converted back for display consistency with the rest of this app. */
+  countries: string[];
+  categoryIds: number[];
+  deviceIds: number[];
+  browserIds: number[];
+  osIds: number[];
+  languageIds: number[];
+  sites: TrafficFactoryMultiStringList;
+  keywords: TrafficFactoryMultiStringList;
+  ipRanges: TrafficFactoryMultiStringList;
 };
 
 /**
@@ -631,19 +694,53 @@ function dollarsToCents(dollars: number): number {
   return Math.round(dollars * 100);
 }
 
-function parseCampaignDetail(row: Record<string, unknown>): TrafficFactoryCampaignDetail {
-  const calculatedStatus = asRecord(row.calculated_status);
+/**
+ * With ?detailed=true, GET /campaigns/{id} returns { campaign: {...flat fields...}, devices,
+ * browsers, languages, countries, categories, sites, keywords, ip_ranges, ... } as siblings of
+ * `campaign`, confirmed from CampaignDetail's definition (all of those are in its required list).
+ * Without detailed=true the response is just the flat Campaign object — handled as a fallback
+ * in case that ever changes, though this file always requests detailed=true.
+ */
+function parseCampaignDetail(payload: Record<string, unknown>, countries: TrafficFactoryCountry[]): TrafficFactoryCampaignDetail {
+  const campaign = asRecord(payload.campaign) ?? payload;
+  const calculatedStatus = asRecord(campaign.calculated_status);
+  const capping = asRecord(campaign.capping);
+
+  const iso3ToIso2 = new Map(countries.map((c) => [c.iso3, c.iso2]));
+  const countryEls = asRecord(payload.countries)?.elements;
+  const countryCodes = Array.isArray(countryEls)
+    ? countryEls
+        .map((e) => pickFirstString(asRecord(e) ?? {}, ["country"]))
+        .filter((c): c is string => !!c)
+        .map((iso3) => iso3ToIso2.get(iso3.toUpperCase()) ?? iso3)
+    : [];
+
   return {
-    id: pickFirstNumber(row, ["id"]) ?? 0,
-    name: pickFirstString(row, ["name"]) ?? "",
-    status: pickFirstNumber(row, ["status"]) ?? 0,
+    id: pickFirstNumber(campaign, ["id"]) ?? 0,
+    name: pickFirstString(campaign, ["name"]) ?? "",
+    status: pickFirstNumber(campaign, ["status"]) ?? 0,
     statusLabel: calculatedStatus ? pickFirstString(calculatedStatus, ["status"]) : null,
-    price: centsToDollars(pickFirstNumber(row, ["price"])),
-    pricingModel: pickFirstNumber(row, ["pricing_model"]),
-    maxDailyBudget: centsToDollars(pickFirstNumber(row, ["max_daily_budget"])),
-    totalBudgetLimit: centsToDollars(pickFirstNumber(row, ["total_budget_limit"])),
-    advertiserAdType: pickFirstNumber(row, ["advertiser_ad_type"]),
-    mediaStorageTemplate: pickFirstString(row, ["media_storage_template"]),
+    price: centsToDollars(pickFirstNumber(campaign, ["price"])),
+    pricingModel: pickFirstNumber(campaign, ["pricing_model"]),
+    maxDailyBudget: centsToDollars(pickFirstNumber(campaign, ["max_daily_budget"])),
+    totalBudgetLimit: centsToDollars(pickFirstNumber(campaign, ["total_budget_limit"])),
+    advertiserAdType: pickFirstNumber(campaign, ["advertiser_ad_type"]),
+    mediaStorageTemplate: pickFirstString(campaign, ["media_storage_template"]),
+    startDate: pickFirstString(campaign, ["start_date"]),
+    endDate: pickFirstString(campaign, ["end_date"]),
+    totalImpressions: pickFirstNumber(campaign, ["total_impressions"]),
+    maxDailyImpressions: pickFirstNumber(campaign, ["max_daily_impressions"]),
+    frequencyCappingImpressions: capping ? pickFirstNumber(capping, ["quantity"]) : null,
+    frequencyCappingMinutes: capping ? pickFirstNumber(capping, ["frequency"]) : null,
+    countries: countryCodes,
+    categoryIds: parseIntCollectionIds(payload.categories),
+    deviceIds: parseIntCollectionIds(payload.devices),
+    browserIds: parseIntCollectionIds(payload.browsers),
+    osIds: parseIntCollectionIds(payload.operating_systems),
+    languageIds: parseIntCollectionIds(payload.languages),
+    sites: parseMultiStringCollection(payload.sites),
+    keywords: parseMultiStringCollection(payload.keywords),
+    ipRanges: parseMultiStringCollection(payload.ip_ranges),
   };
 }
 
@@ -652,9 +749,12 @@ export async function getTrafficFactoryCampaign(
   campaignId: number,
   fetchFn: TfFetch = fetch
 ): Promise<TrafficFactoryCampaignDetail> {
-  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}`, {
-    headers: authHeaders(sessionToken),
-  });
+  const url = new URL(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}`);
+  url.searchParams.set("detailed", "true");
+  const [res, countries] = await Promise.all([
+    fetchFn(url, { headers: authHeaders(sessionToken) }),
+    getTrafficFactoryCountries(sessionToken, fetchFn),
+  ]);
   const text = await res.text();
   if (!res.ok) {
     throwTrafficFactoryHttpError(`/campaigns/${campaignId}`, res.status, text);
@@ -667,7 +767,7 @@ export async function getTrafficFactoryCampaign(
   }
   const row = asRecord(data);
   if (!row) throw new Error(`Respons /campaigns/${campaignId} Traffic Factory tidak terduga: ${text.slice(0, 300)}`);
-  return parseCampaignDetail(row);
+  return parseCampaignDetail(row, countries);
 }
 
 async function findTrafficFactoryCampaignByName(
@@ -791,12 +891,26 @@ export async function createTrafficFactoryCampaign(
 
 export type UpdateTrafficFactoryCampaignInput = {
   name?: string;
+  /** 1 Running, 0 Paused, -1 Archived — prefer setTrafficFactoryCampaignsRunState for play/pause. */
+  status?: number;
   categoryIds?: number[];
   countries?: string[];
+  deviceIds?: number[];
+  browserIds?: number[];
+  osIds?: number[];
+  languageIds?: number[];
   pricingModel?: number;
   price?: number;
   maxDailyBudget?: number;
   totalBudgetLimit?: number;
+  startDate?: string | null;
+  endDate?: string | null;
+  totalImpressions?: number;
+  maxDailyImpressions?: number;
+  frequencyCapping?: { enabled: boolean; impressions?: number; minutes?: number };
+  sites?: TrafficFactoryMultiStringList;
+  keywords?: TrafficFactoryMultiStringList;
+  ipRanges?: TrafficFactoryMultiStringList;
 };
 
 export async function updateTrafficFactoryCampaign(
@@ -807,7 +921,12 @@ export async function updateTrafficFactoryCampaign(
 ): Promise<void> {
   const body: Record<string, unknown> = {};
   if (input.name !== undefined) body.name = input.name;
+  if (input.status !== undefined) body.status = input.status;
   if (input.categoryIds !== undefined) body.categories = { type: "targeted", elements: input.categoryIds };
+  if (input.deviceIds !== undefined) body.devices = { type: "targeted", elements: input.deviceIds };
+  if (input.browserIds !== undefined) body.browsers = { type: "targeted", elements: input.browserIds };
+  if (input.osIds !== undefined) body.operating_systems = { type: "targeted", elements: input.osIds };
+  if (input.languageIds !== undefined) body.languages = { type: "targeted", elements: input.languageIds };
   if (input.countries !== undefined) {
     const countries = await getTrafficFactoryCountries(sessionToken, fetchFn);
     const iso3 = resolveCountryIso3Codes(input.countries, countries);
@@ -821,6 +940,23 @@ export async function updateTrafficFactoryCampaign(
     body.daily_limit_type = input.maxDailyBudget > 0 ? 1 : 0;
   }
   if (input.totalBudgetLimit !== undefined) body.total_budget_limit = dollarsToCents(input.totalBudgetLimit);
+  if (input.startDate !== undefined) body.start_date = input.startDate;
+  if (input.endDate !== undefined) body.end_date = input.endDate;
+  if (input.totalImpressions !== undefined) body.total_impressions = input.totalImpressions;
+  if (input.maxDailyImpressions !== undefined) {
+    body.max_daily_impressions = input.maxDailyImpressions;
+    if (input.maxDailyImpressions > 0 && input.maxDailyBudget === undefined) body.daily_limit_type = 2;
+  }
+  if (input.frequencyCapping !== undefined) {
+    body.frequency_capping = {
+      enabled: input.frequencyCapping.enabled,
+      impressions: input.frequencyCapping.impressions,
+      minutes: input.frequencyCapping.minutes,
+    };
+  }
+  if (input.sites !== undefined) body.sites = input.sites;
+  if (input.keywords !== undefined) body.keywords = input.keywords;
+  if (input.ipRanges !== undefined) body.ip_ranges = input.ipRanges;
 
   const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}`, {
     method: "PUT",

@@ -7,8 +7,12 @@ import {
   deleteTrafficFactoryCampaigns,
   deleteTrafficFactoryVariation,
   getTrafficFactoryAdvertiserAdTypes,
+  getTrafficFactoryBrowsers,
   getTrafficFactoryCampaign,
   getTrafficFactoryCategories,
+  getTrafficFactoryDevices,
+  getTrafficFactoryLanguages,
+  getTrafficFactoryOperatingSystems,
   getTrafficFactoryCountryStats,
   getTrafficFactoryDailyStats,
   getTrafficFactorySessionToken,
@@ -338,6 +342,23 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.equal(categories[0].id, 1);
   });
 
+  it("fetches devices/browsers/operating-systems/languages as plain {id,name} dictionaries", async () => {
+    const dictFetch =
+      (expectedPath: RegExp): TfFetch =>
+      async (input) => {
+        const url = new URL(String(input));
+        assert.match(url.pathname, expectedPath);
+        return jsonResponse({ result: [{ id: 1, name: "Chrome" }] });
+      };
+    assert.deepEqual(await getTrafficFactoryDevices("session", dictFetch(/\/collections\/devices$/)), [{ id: 1, name: "Chrome" }]);
+    assert.deepEqual(await getTrafficFactoryBrowsers("session", dictFetch(/\/collections\/browsers$/)), [{ id: 1, name: "Chrome" }]);
+    assert.deepEqual(
+      await getTrafficFactoryOperatingSystems("session", dictFetch(/\/collections\/operating-systems$/)),
+      [{ id: 1, name: "Chrome" }]
+    );
+    assert.deepEqual(await getTrafficFactoryLanguages("session", dictFetch(/\/collections\/languages$/)), [{ id: 1, name: "Chrome" }]);
+  });
+
   it("creates a campaign with the nested collection/pricing shape, resolving ISO2 countries to ISO3, then resolves its id by name", async () => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
     const fetchFn: TfFetch = async (input, init) => {
@@ -522,21 +543,83 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.deepEqual(capturedBody, { countries: { type: "targeted", elements: [{ country: "IDN" }] } });
   });
 
-  it("parses a campaign detail response, converting cents back to dollars", async () => {
+  it("sends status, dictionary targeting, dates, frequency capping and block-lists as given", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    const fetchFn: TfFetch = async (input, init) => {
+      capturedBody = JSON.parse(String(init?.body));
+      return new Response("", { status: 200 });
+    };
+    await updateTrafficFactoryCampaign(
+      "session",
+      123,
+      {
+        status: 0,
+        deviceIds: [10, 11],
+        browserIds: [5],
+        osIds: [20],
+        languageIds: [1],
+        startDate: "2026-11-01",
+        endDate: null,
+        totalImpressions: 50000,
+        maxDailyImpressions: 2000,
+        frequencyCapping: { enabled: true, impressions: 3, minutes: 1440 },
+        sites: { targeted: [], blocked: ["bad-site.com"] },
+        keywords: { targeted: ["promo"], blocked: [] },
+        ipRanges: { targeted: [], blocked: ["1.2.3.0/24"] },
+      },
+      fetchFn
+    );
+    assert.deepEqual(capturedBody, {
+      status: 0,
+      devices: { type: "targeted", elements: [10, 11] },
+      browsers: { type: "targeted", elements: [5] },
+      operating_systems: { type: "targeted", elements: [20] },
+      languages: { type: "targeted", elements: [1] },
+      start_date: "2026-11-01",
+      end_date: null,
+      total_impressions: 50000,
+      max_daily_impressions: 2000,
+      daily_limit_type: 2,
+      frequency_capping: { enabled: true, impressions: 3, minutes: 1440 },
+      sites: { targeted: [], blocked: ["bad-site.com"] },
+      keywords: { targeted: ["promo"], blocked: [] },
+      ip_ranges: { targeted: [], blocked: ["1.2.3.0/24"] },
+    });
+  });
+
+  it("parses a detailed campaign response (campaign + sibling collections), converting cents to dollars and ISO3 countries back to ISO2", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       assert.match(url.pathname, /\/campaigns\/123$/);
+      assert.equal(url.searchParams.get("detailed"), "true");
       return jsonResponse({
-        id: 123,
-        name: "Promo",
-        status: 1,
-        calculated_status: { id: 1, status: "Running" },
-        price: 50, // cents -> $0.50
-        pricing_model: 2,
-        max_daily_budget: 1000, // cents -> $10
-        total_budget_limit: 0,
-        advertiser_ad_type: 5,
-        media_storage_template: "popunder",
+        campaign: {
+          id: 123,
+          name: "Promo",
+          status: 1,
+          calculated_status: { id: 1, status: "Running" },
+          price: 50, // cents -> $0.50
+          pricing_model: 2,
+          max_daily_budget: 1000, // cents -> $10
+          total_budget_limit: 0,
+          advertiser_ad_type: 5,
+          media_storage_template: "popunder",
+          start_date: "2026-11-01",
+          end_date: "2026-12-01",
+          total_impressions: 100000,
+          max_daily_impressions: 5000,
+          capping: { quantity: 3, frequency: 1440, level: "Campaign" },
+        },
+        countries: { elements: [{ country: "IDN" }, { country: "USA" }] },
+        categories: { elements: [1, 2] },
+        devices: { elements: [10] },
+        browsers: { elements: [] },
+        operating_systems: { elements: [20, 21] },
+        languages: { elements: [] },
+        sites: { targeted: ["example.com"], blocked: [] },
+        keywords: { targeted: [], blocked: ["spam"] },
+        ip_ranges: { targeted: [], blocked: [] },
       });
     };
     const detail = await getTrafficFactoryCampaign("session", 123, fetchFn);
@@ -545,6 +628,16 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.equal(detail.price, 0.5);
     assert.equal(detail.maxDailyBudget, 10);
     assert.equal(detail.pricingModel, 2);
+    assert.equal(detail.startDate, "2026-11-01");
+    assert.equal(detail.totalImpressions, 100000);
+    assert.equal(detail.frequencyCappingImpressions, 3);
+    assert.equal(detail.frequencyCappingMinutes, 1440);
+    assert.deepEqual(detail.countries, ["ID", "US"]);
+    assert.deepEqual(detail.categoryIds, [1, 2]);
+    assert.deepEqual(detail.deviceIds, [10]);
+    assert.deepEqual(detail.osIds, [20, 21]);
+    assert.deepEqual(detail.sites, { targeted: ["example.com"], blocked: [] });
+    assert.deepEqual(detail.keywords, { targeted: [], blocked: ["spam"] });
   });
 
   it("sends campaign_ids for play/pause and surfaces partial errors from the bulk response", async () => {

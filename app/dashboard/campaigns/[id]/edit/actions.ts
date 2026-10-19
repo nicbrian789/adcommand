@@ -132,14 +132,36 @@ async function resolveTrafficFactoryCampaign(campaignId: string) {
   return { supabase, campaign, sessionToken, externalId: Number(campaign.external_id) };
 }
 
+const TF_STATUS_TO_LOCAL: Record<number, string> = { 1: "Running", 0: "Paused", [-1]: "Stopped" };
+
 export async function updateTrafficFactoryCampaignAction(
   campaignId: string,
   input: {
     name: string;
+    status: number;
     pricingModel: number;
     price: number;
     maxDailyBudget: number;
     totalBudgetLimit: number;
+    countries: string[];
+    categoryIds: number[];
+    deviceIds: number[];
+    browserIds: number[];
+    osIds: number[];
+    languageIds: number[];
+    startDate: string;
+    endDate: string;
+    totalImpressions: number;
+    maxDailyImpressions: number;
+    frequencyCappingEnabled: boolean;
+    frequencyCappingImpressions: number;
+    frequencyCappingMinutes: number;
+    sitesMode: "targeted" | "blocked";
+    sites: string[];
+    keywordsMode: "targeted" | "blocked";
+    keywords: string[];
+    ipRangesMode: "targeted" | "blocked";
+    ipRanges: string[];
   }
 ): Promise<void> {
   try {
@@ -150,14 +172,42 @@ export async function updateTrafficFactoryCampaignAction(
 
     await updateTrafficFactoryCampaign(sessionToken, externalId, {
       name: input.name.trim(),
+      status: input.status,
       pricingModel: input.pricingModel,
       price: input.price,
       maxDailyBudget: input.maxDailyBudget,
       totalBudgetLimit: input.totalBudgetLimit,
+      countries: input.countries,
+      categoryIds: input.categoryIds,
+      deviceIds: input.deviceIds,
+      browserIds: input.browserIds,
+      osIds: input.osIds,
+      languageIds: input.languageIds,
+      startDate: input.startDate || null,
+      endDate: input.endDate || null,
+      totalImpressions: input.totalImpressions,
+      maxDailyImpressions: input.maxDailyImpressions,
+      frequencyCapping: {
+        enabled: input.frequencyCappingEnabled,
+        impressions: input.frequencyCappingImpressions || undefined,
+        minutes: input.frequencyCappingMinutes || undefined,
+      },
+      sites: { targeted: input.sitesMode === "targeted" ? input.sites : [], blocked: input.sitesMode === "blocked" ? input.sites : [] },
+      keywords: {
+        targeted: input.keywordsMode === "targeted" ? input.keywords : [],
+        blocked: input.keywordsMode === "blocked" ? input.keywords : [],
+      },
+      ipRanges: {
+        targeted: input.ipRangesMode === "targeted" ? input.ipRanges : [],
+        blocked: input.ipRangesMode === "blocked" ? input.ipRanges : [],
+      },
     });
 
-    const { error: updateError } = await supabase.from("campaigns").update({ name: input.name.trim() }).eq("id", campaign.id);
-    if (updateError) console.error("Gagal update nama campaign lokal:", updateError.message);
+    const { error: updateError } = await supabase
+      .from("campaigns")
+      .update({ name: input.name.trim(), status: TF_STATUS_TO_LOCAL[input.status] ?? "Draft" })
+      .eq("id", campaign.id);
+    if (updateError) console.error("Gagal update nama/status campaign lokal:", updateError.message);
 
     revalidatePath("/dashboard/campaigns");
     revalidatePath(`/dashboard/campaigns/${campaignId}/edit`);

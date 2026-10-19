@@ -4,7 +4,16 @@ import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { getTrafficStarsAccessToken, getTrafficStarsCampaign, listTrafficStarsBanners } from "@/lib/integrations/trafficstars";
-import { getTrafficFactorySessionToken, getTrafficFactoryCampaign, listTrafficFactoryVariations } from "@/lib/integrations/trafficfactory";
+import {
+  getTrafficFactorySessionToken,
+  getTrafficFactoryCampaign,
+  listTrafficFactoryVariations,
+  getTrafficFactoryCategories,
+  getTrafficFactoryDevices,
+  getTrafficFactoryBrowsers,
+  getTrafficFactoryOperatingSystems,
+  getTrafficFactoryLanguages,
+} from "@/lib/integrations/trafficfactory";
 import { TrafficStarsEditCampaignForm } from "@/components/dashboard/TrafficStarsEditCampaignForm";
 import { TrafficStarsCampaignBanners } from "@/components/dashboard/TrafficStarsCampaignBanners";
 import { TrafficFactoryEditCampaignForm } from "@/components/dashboard/TrafficFactoryEditCampaignForm";
@@ -69,11 +78,21 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   if (network.provider === "traffic_factory") {
     let detail;
     let variations;
+    let categories;
+    let devices;
+    let browsers;
+    let operatingSystems;
+    let languages;
     try {
       const sessionToken = await getTrafficFactorySessionToken(apiKey);
-      [detail, variations] = await Promise.all([
+      [detail, variations, categories, devices, browsers, operatingSystems, languages] = await Promise.all([
         getTrafficFactoryCampaign(sessionToken, Number(campaign.external_id)),
         listTrafficFactoryVariations(sessionToken, Number(campaign.external_id)),
+        getTrafficFactoryCategories(sessionToken),
+        getTrafficFactoryDevices(sessionToken),
+        getTrafficFactoryBrowsers(sessionToken),
+        getTrafficFactoryOperatingSystems(sessionToken),
+        getTrafficFactoryLanguages(sessionToken),
       ]);
     } catch (err) {
       return (
@@ -98,7 +117,15 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
         </div>
 
         <div className="grid gap-5 lg:grid-cols-2 items-start">
-          <TrafficFactoryEditCampaignForm campaignId={campaign.id} detail={detail} />
+          <TrafficFactoryEditCampaignForm
+            campaignId={campaign.id}
+            detail={detail}
+            categories={categories}
+            devices={devices}
+            browsers={browsers}
+            operatingSystems={operatingSystems}
+            languages={languages}
+          />
           <TrafficFactoryCampaignVariations campaignId={campaign.id} initialVariations={variations} />
         </div>
       </div>
