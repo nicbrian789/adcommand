@@ -14,9 +14,12 @@ import { getAdsterraBalance, getAdsterraStats } from "@/lib/integrations/adsterr
 import { getJuicyAdsDailyStats, listJuicyAdsCampaigns } from "@/lib/integrations/juicyads";
 import { getTrafficJunkyBalance, getTrafficJunkyStats } from "@/lib/integrations/trafficjunky";
 import {
+  canPersistTrafficFactoryBalance,
+  getTrafficFactoryCountryStats,
+  getTrafficFactoryDailyStats,
   getTrafficFactorySessionToken,
-  getTrafficFactoryStatsByDate,
-  getTrafficFactoryStatsByCountry,
+  getTrafficFactoryUser,
+  listTrafficFactoryCampaigns,
 } from "@/lib/integrations/trafficfactory";
 
 type Supabase = SupabaseClient;
@@ -436,86 +439,76 @@ async function syncTrafficJunky(supabase: Supabase, network: { id: string; works
 async function syncTrafficFactory(supabase: Supabase, network: { id: string; workspace_id: string }, token: string) {
   const { dateFrom, dateTo } = sevenDayRange();
   const sessionToken = await getTrafficFactorySessionToken(token);
-  const rows = await getTrafficFactoryStatsByDate(sessionToken, dateFrom, dateTo);
 
-  if (rows.length === 0) return { campaigns: 0, days: 0 };
-
-  const sample = rows[0];
-  const idKey = findKey(sample, (k) => /campaign/i.test(k) && /id/i.test(k)) ?? findKey(sample, (k) => k.toLowerCase() === "campaign");
-  const nameKey = findKey(sample, (k) => /campaign/i.test(k) && /name/i.test(k));
-  const dateKey = findKey(sample, (k) => k.toLowerCase() === "ddate") ?? findKey(sample, (k) => /date/i.test(k));
-  const costKey = findKey(sample, (k) => /cost|spend/i.test(k));
-  const impKey = findKey(sample, (k) => /impression/i.test(k)) ?? findKey(sample, (k) => k.toLowerCase() === "hits");
-  const clickKey = findKey(sample, (k) => /click/i.test(k));
-
-  if (!idKey || !dateKey) {
-    throw new Error(
-      `Field campaign/tanggal tidak ditemukan di respons Traffic Factory. Field yang ada: ${Object.keys(sample).join(", ")}`
-    );
+  const userInfo = await getTrafficFactoryUser(sessionToken);
+  if (canPersistTrafficFactoryBalance(userInfo.currency)) {
+    await saveBalance(supabase, network.id, userInfo.balance);
   }
 
+  // Real names/statuses from /campaigns instead of synthesizing "Traffic Factory {id}" / always "Running".
+  const { items: tfCampaigns } = await listTrafficFactoryCampaigns(sessionToken);
   const campaignIds = new Map<string, string>();
-  const rows_: StatRow[] = [];
+  for (const tc of tfCampaigns) {
+    const id = await upsertCampaign(supabase, network.workspace_id, network.id, tc.externalId, tc.name, tc.status);
+    campaignIds.set(tc.externalId, id);
+  }
 
-  for (const item of rows) {
-    const externalId = String(item[idKey]);
-    if (!campaignIds.has(externalId)) {
-      const campaignId = await upsertCampaign(
-        supabase,
-        network.workspace_id,
-        network.id,
-        externalId,
-        nameKey && item[nameKey] ? String(item[nameKey]) : `Traffic Factory ${externalId}`,
-        "Running"
-      );
-      campaignIds.set(externalId, campaignId);
+  async function resolveCampaignId(externalId: string): Promise<string> {
+    let id = campaignIds.get(externalId);
+    if (!id) {
+      id = await upsertCampaign(supabase, network.workspace_id, network.id, externalId, `Traffic Factory ${externalId}`, "Draft");
+      campaignIds.set(externalId, id);
     }
+    return id;
+  }
 
-    rows_.push({
+  const { items: dailyStats } = await getTrafficFactoryDailyStats(sessionToken, dateFrom, dateTo);
+  const merged = new Map<string, StatRow>();
+  for (const row of dailyStats) {
+    if (!row.campaignExternalId) continue;
+    const campaignId = await resolveCampaignId(row.campaignExternalId);
+    const key = `${campaignId}|${row.date}`;
+    if (merged.has(key)) continue; // pagination dupes — don't sum, avoids double-counting
+    merged.set(key, {
       workspace_id: network.workspace_id,
-      campaign_id: campaignIds.get(externalId)!,
-      stat_date: String(item[dateKey]).slice(0, 10),
+      campaign_id: campaignId,
+      stat_date: row.date,
       country: ALL,
-      spend: costKey ? Number(item[costKey] ?? 0) : null,
-      impressions: impKey ? Number(item[impKey] ?? 0) : null,
-      clicks: clickKey ? Number(item[clickKey] ?? 0) : null,
+      spend: row.spend,
+      impressions: row.impressions,
+      clicks: row.clicks,
       conversions: null,
       revenue: null,
     });
   }
+  let saved = await saveStats(supabase, [...merged.values()]);
 
-  let saved = await saveStats(supabase, rows_);
-
-  // TrafficFactory nggak punya endpoint gabungan date+country+campaign dalam satu request
-  // (/statistics/a/country cuma kasih total per rentang tanggal, bukan per hari), jadi di-loop
-  // per hari biar breakdown negara tetap punya stat_date yang bener.
-  const geoStatRows: StatRow[] = [];
+  // /statistics/a/country has no per-day granularity (one total per range), so it's looped
+  // per day to keep the country breakdown's stat_date accurate.
+  const geoMerged = new Map<string, StatRow>();
   for (const day of daysBetween(dateFrom, dateTo)) {
-    const geoRows = await getTrafficFactoryStatsByCountry(sessionToken, day, day);
-    if (geoRows.length === 0) continue;
-
-    const countryKey = findKey(geoRows[0], (k) => k.toLowerCase() === "country") ?? findKey(geoRows[0], (k) => /country/i.test(k));
-    if (!countryKey) continue;
-
-    for (const item of geoRows) {
-      const externalId = String(item[idKey]);
-      const campaignId = campaignIds.get(externalId);
-      const country = countryToCode(item[countryKey]);
-      if (!campaignId || !country) continue;
-      geoStatRows.push({
+    const geoRows = await getTrafficFactoryCountryStats(sessionToken, day, day);
+    for (const row of geoRows) {
+      if (!row.campaignExternalId) continue;
+      const country = countryToCode(row.country);
+      if (!country) continue;
+      const campaignId = await resolveCampaignId(row.campaignExternalId);
+      const key = `${campaignId}|${day}|${country}`;
+      if (geoMerged.has(key)) continue;
+      geoMerged.set(key, {
         workspace_id: network.workspace_id,
         campaign_id: campaignId,
         stat_date: day,
         country,
-        spend: costKey ? Number(item[costKey] ?? 0) : null,
-        impressions: impKey ? Number(item[impKey] ?? 0) : null,
-        clicks: clickKey ? Number(item[clickKey] ?? 0) : null,
+        spend: row.spend,
+        impressions: row.impressions,
+        clicks: row.clicks,
         conversions: null,
         revenue: null,
       });
     }
   }
-  saved += await saveStats(supabase, geoStatRows);
+  saved += await saveStats(supabase, [...geoMerged.values()]);
 
   return { campaigns: campaignIds.size, days: saved };
 }
