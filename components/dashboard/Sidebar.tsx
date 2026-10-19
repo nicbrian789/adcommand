@@ -18,6 +18,7 @@ import {
   Plus,
   Menu,
   X,
+  Sparkles,
 } from "lucide-react";
 import { colorForNetwork } from "@/lib/networkColors";
 
@@ -30,6 +31,7 @@ type NavItem = { label: string; icon: typeof Bell; href: string | null; badge?: 
 
 const primaryNav: NavItem[] = [
   { label: "Overview", icon: LayoutDashboard, href: "/dashboard" },
+  { label: "AI Assisten", icon: Sparkles, href: "/dashboard/assistant" },
   { label: "Networks", icon: Share2, href: "/dashboard/networks" },
   { label: "Campaigns", icon: Megaphone, href: "/dashboard/campaigns" },
   { label: "Analytics", icon: BarChart3, href: "/dashboard/analytics" },
