@@ -13,6 +13,8 @@ import {
   getTrafficFactoryBrowsers,
   getTrafficFactoryOperatingSystems,
   getTrafficFactoryLanguages,
+  getTrafficFactoryCarriers,
+  getTrafficFactoryTimezones,
 } from "@/lib/integrations/trafficfactory";
 import { TrafficStarsEditCampaignForm } from "@/components/dashboard/TrafficStarsEditCampaignForm";
 import { TrafficStarsCampaignBanners } from "@/components/dashboard/TrafficStarsCampaignBanners";
@@ -83,9 +85,11 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
     let browsers;
     let operatingSystems;
     let languages;
+    let carriers;
+    let timezones;
     try {
       const sessionToken = await getTrafficFactorySessionToken(apiKey);
-      [detail, variations, categories, devices, browsers, operatingSystems, languages] = await Promise.all([
+      [detail, variations, categories, devices, browsers, operatingSystems, languages, carriers, timezones] = await Promise.all([
         getTrafficFactoryCampaign(sessionToken, Number(campaign.external_id)),
         listTrafficFactoryVariations(sessionToken, Number(campaign.external_id)),
         getTrafficFactoryCategories(sessionToken),
@@ -93,6 +97,8 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
         getTrafficFactoryBrowsers(sessionToken),
         getTrafficFactoryOperatingSystems(sessionToken),
         getTrafficFactoryLanguages(sessionToken),
+        getTrafficFactoryCarriers(sessionToken),
+        getTrafficFactoryTimezones(sessionToken),
       ]);
     } catch (err) {
       return (
@@ -125,6 +131,8 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             browsers={browsers}
             operatingSystems={operatingSystems}
             languages={languages}
+            carriers={carriers}
+            timezones={timezones}
           />
           <TrafficFactoryCampaignVariations campaignId={campaign.id} initialVariations={variations} />
         </div>

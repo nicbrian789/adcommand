@@ -632,6 +632,27 @@ export function getTrafficFactoryLanguages(sessionToken: string, fetchFn: TfFetc
   return getTrafficFactoryDict("/collections/languages", sessionToken, fetchFn);
 }
 
+/** /collections/carriers has no country filter param — it's a flat global list, confirmed from the live swagger.json
+ * (not per-country dependent, despite how the docs sidebar groups it next to countries). */
+export function getTrafficFactoryCarriers(sessionToken: string, fetchFn: TfFetch = fetch) {
+  return getTrafficFactoryDict("/collections/carriers", sessionToken, fetchFn);
+}
+
+export async function getTrafficFactoryTimezones(sessionToken: string, fetchFn: TfFetch = fetch): Promise<string[]> {
+  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/collections/timezones`, { headers: authHeaders(sessionToken) });
+  const text = await res.text();
+  if (!res.ok) throwTrafficFactoryHttpError("/collections/timezones", res.status, text);
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Respons /collections/timezones Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
+  }
+  const rows = unwrapList(data);
+  const names = rows.map((r) => pickFirstString(r, ["name"])).filter((n): n is string => !!n);
+  return [...new Set(names)].sort();
+}
+
 export type TrafficFactoryMultiStringList = { targeted: string[]; blocked: string[] };
 
 function parseMultiStringCollection(value: unknown): TrafficFactoryMultiStringList {
@@ -673,9 +694,12 @@ export type TrafficFactoryCampaignDetail = {
   browserIds: number[];
   osIds: number[];
   languageIds: number[];
+  carrierIds: number[];
   sites: TrafficFactoryMultiStringList;
   keywords: TrafficFactoryMultiStringList;
   ipRanges: TrafficFactoryMultiStringList;
+  dayPartingTimezone: string | null;
+  dayParting: TrafficFactoryDayPartEntry[];
 };
 
 /**
@@ -738,9 +762,23 @@ function parseCampaignDetail(payload: Record<string, unknown>, countries: Traffi
     browserIds: parseIntCollectionIds(payload.browsers),
     osIds: parseIntCollectionIds(payload.operating_systems),
     languageIds: parseIntCollectionIds(payload.languages),
+    carrierIds: parseIntCollectionIds(payload.carriers),
     sites: parseMultiStringCollection(payload.sites),
     keywords: parseMultiStringCollection(payload.keywords),
     ipRanges: parseMultiStringCollection(payload.ip_ranges),
+    dayPartingTimezone: pickFirstString(asRecord(payload.day_parting) ?? {}, ["timezone"]),
+    dayParting: (() => {
+      const parting = asRecord(payload.day_parting)?.parting;
+      if (!Array.isArray(parting)) return [];
+      return parting
+        .map((p) => {
+          const row = asRecord(p);
+          const day = row ? pickFirstNumber(row, ["day"]) : null;
+          const hours = Array.isArray(row?.hours) ? row.hours.filter((h): h is number => typeof h === "number") : [];
+          return day !== null ? { day, hours } : null;
+        })
+        .filter((x): x is TrafficFactoryDayPartEntry => x !== null);
+    })(),
   };
 }
 
@@ -804,11 +842,17 @@ function sleep(ms: number) {
 }
 
 /** Shared by create and update — every field here is optional so update can send a partial PUT. */
+/** { day: 1-7, hours: 0-23[] }. Day numbering (1=Monday..7=Sunday, ISO 8601) is NOT documented in
+ * the spec — this is the most common convention in REST ad-tech APIs but is unverified against a
+ * live account. Flag to the user the first time this is used in case it turns out reversed. */
+export type TrafficFactoryDayPartEntry = { day: number; hours: number[] };
+
 type ExtendedTargetingInput = {
   deviceIds?: number[];
   browserIds?: number[];
   osIds?: number[];
   languageIds?: number[];
+  carrierIds?: number[];
   startDate?: string | null;
   endDate?: string | null;
   totalImpressions?: number;
@@ -817,6 +861,7 @@ type ExtendedTargetingInput = {
   sites?: TrafficFactoryMultiStringList;
   keywords?: TrafficFactoryMultiStringList;
   ipRanges?: TrafficFactoryMultiStringList;
+  dayParting?: { timezone: string; parting: TrafficFactoryDayPartEntry[] };
 };
 
 function applyExtendedTargetingBody(body: Record<string, unknown>, input: ExtendedTargetingInput): void {
@@ -824,6 +869,8 @@ function applyExtendedTargetingBody(body: Record<string, unknown>, input: Extend
   if (input.browserIds !== undefined) body.browsers = { type: "targeted", elements: input.browserIds };
   if (input.osIds !== undefined) body.operating_systems = { type: "targeted", elements: input.osIds };
   if (input.languageIds !== undefined) body.languages = { type: "targeted", elements: input.languageIds };
+  if (input.carrierIds !== undefined) body.carriers = { type: "targeted", elements: input.carrierIds };
+  if (input.dayParting !== undefined) body.day_parting = input.dayParting;
   if (input.startDate !== undefined) body.start_date = input.startDate;
   if (input.endDate !== undefined) body.end_date = input.endDate;
   if (input.totalImpressions !== undefined) body.total_impressions = input.totalImpressions;

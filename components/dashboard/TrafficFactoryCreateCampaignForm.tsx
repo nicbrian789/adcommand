@@ -6,6 +6,7 @@ import { Loader2, CheckCircle2, Upload } from "lucide-react";
 import { createTrafficFactoryCampaignAction, createTrafficFactoryVariationAction } from "@/app/dashboard/networks/[id]/create-campaign/actions";
 import { FilePreviewThumbnails } from "@/components/dashboard/FilePreviewThumbnails";
 import { MultiSelectChecklist } from "@/components/dashboard/MultiSelectChecklist";
+import { DayPartingGrid, type DayPartingValue } from "@/components/dashboard/DayPartingGrid";
 import type { TrafficFactoryAdvertiserAdType, TrafficFactoryCategory, TrafficFactoryDictItem } from "@/lib/integrations/trafficfactory";
 
 const inputClass =
@@ -28,6 +29,12 @@ function linesToList(text: string) {
     .filter(Boolean);
 }
 
+function dayPartingToPayload(value: DayPartingValue) {
+  return Object.entries(value)
+    .filter(([, hours]) => hours.size > 0)
+    .map(([day, hours]) => ({ day: Number(day), hours: [...hours].sort((a, b) => a - b) }));
+}
+
 export function TrafficFactoryCreateCampaignForm({
   networkId,
   adTypes,
@@ -36,6 +43,8 @@ export function TrafficFactoryCreateCampaignForm({
   browsers,
   operatingSystems,
   languages,
+  carriers,
+  timezones,
 }: {
   networkId: string;
   adTypes: TrafficFactoryAdvertiserAdType[];
@@ -44,6 +53,8 @@ export function TrafficFactoryCreateCampaignForm({
   browsers: TrafficFactoryDictItem[];
   operatingSystems: TrafficFactoryDictItem[];
   languages: TrafficFactoryDictItem[];
+  carriers: TrafficFactoryDictItem[];
+  timezones: string[];
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -62,6 +73,9 @@ export function TrafficFactoryCreateCampaignForm({
   const [browserIds, setBrowserIds] = useState<Set<number>>(new Set());
   const [osIds, setOsIds] = useState<Set<number>>(new Set());
   const [languageIds, setLanguageIds] = useState<Set<number>>(new Set());
+  const [carrierIds, setCarrierIds] = useState<Set<number>>(new Set());
+  const [dayPartingTimezone, setDayPartingTimezone] = useState(timezones.includes("UTC") ? "UTC" : (timezones[0] ?? ""));
+  const [dayParting, setDayParting] = useState<DayPartingValue>({});
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [totalImpressions, setTotalImpressions] = useState("");
@@ -117,6 +131,9 @@ export function TrafficFactoryCreateCampaignForm({
         browserIds: [...browserIds],
         osIds: [...osIds],
         languageIds: [...languageIds],
+        carrierIds: [...carrierIds],
+        dayPartingTimezone,
+        dayParting: dayPartingToPayload(dayParting),
         startDate,
         endDate,
         totalImpressions: totalImpressions ? Number(totalImpressions) : 0,
@@ -467,9 +484,35 @@ export function TrafficFactoryCreateCampaignForm({
           onChange={setLanguageIds}
           placeholder="Cari bahasa..."
         />
+        <MultiSelectChecklist
+          label="Carrier (operator seluler)"
+          items={carriers.map((c) => ({ id: c.id, label: c.name }))}
+          selected={carrierIds}
+          onChange={setCarrierIds}
+          placeholder="Cari carrier..."
+        />
         <p className="text-xs text-muted">
-          Kosongin kategori/device/browser/OS/bahasa berarti nggak ada filter (semua ditargetkan). Carrier, retargeting, zona premium,
-          day parting, dan goal optimization belum ada di sini — bisa diatur manual lewat website Traffic Factory kalau perlu.
+          Kosongin kategori/device/browser/OS/bahasa/carrier berarti nggak ada filter (semua ditargetkan). Retargeting, zona premium,
+          dan goal optimization belum ada di sini — bisa diatur manual lewat website Traffic Factory kalau perlu.
+        </p>
+      </div>
+
+      <div className="border-t border-border/60 pt-4 space-y-3">
+        <h3 className="text-xs font-semibold text-muted uppercase tracking-wide">Jadwal Jam Tayang (Day Parting, opsional)</h3>
+        <div>
+          <label className="block text-xs text-muted mb-1.5">Timezone</label>
+          <select value={dayPartingTimezone} onChange={(e) => setDayPartingTimezone(e.target.value)} className={inputClass}>
+            {timezones.map((tz) => (
+              <option key={tz} value={tz}>
+                {tz}
+              </option>
+            ))}
+          </select>
+        </div>
+        <DayPartingGrid value={dayParting} onChange={setDayParting} />
+        <p className="text-xs text-muted">
+          Urutan hari (Senin=1...Minggu=7) ini asumsi — Traffic Factory nggak dokumentasiin urutannya secara eksplisit. Kalau pas
+          dicoba ternyata hari yang aktif kebalik, kabarin ya biar saya perbaiki.
         </p>
       </div>
 

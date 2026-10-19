@@ -194,6 +194,7 @@ export async function createTrafficFactoryCampaignAction(
     browserIds: number[];
     osIds: number[];
     languageIds: number[];
+    carrierIds: number[];
     pricingModel: number;
     price: number;
     maxDailyBudget: number;
@@ -211,6 +212,8 @@ export async function createTrafficFactoryCampaignAction(
     keywords: string[];
     ipRangesMode: "targeted" | "blocked";
     ipRanges: string[];
+    dayPartingTimezone: string;
+    dayParting: { day: number; hours: number[] }[];
   }
 ): Promise<{ id: number }> {
   try {
@@ -258,6 +261,11 @@ export async function createTrafficFactoryCampaignAction(
       browserIds: input.browserIds.length > 0 ? input.browserIds : undefined,
       osIds: input.osIds.length > 0 ? input.osIds : undefined,
       languageIds: input.languageIds.length > 0 ? input.languageIds : undefined,
+      carrierIds: input.carrierIds.length > 0 ? input.carrierIds : undefined,
+      dayParting:
+        input.dayParting.length > 0
+          ? { timezone: input.dayPartingTimezone || "UTC", parting: input.dayParting }
+          : undefined,
       startDate: input.startDate || undefined,
       endDate: input.endDate || undefined,
       totalImpressions: input.totalImpressions || undefined,

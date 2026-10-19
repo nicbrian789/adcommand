@@ -9,10 +9,12 @@ import {
   getTrafficFactoryAdvertiserAdTypes,
   getTrafficFactoryBrowsers,
   getTrafficFactoryCampaign,
+  getTrafficFactoryCarriers,
   getTrafficFactoryCategories,
   getTrafficFactoryDevices,
   getTrafficFactoryLanguages,
   getTrafficFactoryOperatingSystems,
+  getTrafficFactoryTimezones,
   getTrafficFactoryCountryStats,
   getTrafficFactoryDailyStats,
   getTrafficFactorySessionToken,
@@ -359,6 +361,33 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.deepEqual(await getTrafficFactoryLanguages("session", dictFetch(/\/collections\/languages$/)), [{ id: 1, name: "Chrome" }]);
   });
 
+  it("fetches carriers as a flat global dictionary (no country path param)", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/collections\/carriers$/);
+      assert.equal(url.pathname.includes("undefined"), false);
+      return jsonResponse({ result: [{ id: 7, name: "Vodafone", country_id: 2, enabled: 1 }] });
+    };
+    const carriers = await getTrafficFactoryCarriers("session", fetchFn);
+    assert.deepEqual(carriers, [{ id: 7, name: "Vodafone" }]);
+  });
+
+  it("fetches and dedupes timezone names", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/collections\/timezones$/);
+      return jsonResponse({
+        result: [
+          { name: "Asia/Jakarta", country_iso3: "IDN" },
+          { name: "Asia/Jakarta", country_iso3: "IDN" },
+          { name: "Europe/Dublin", country_iso3: "IRL" },
+        ],
+      });
+    };
+    const timezones = await getTrafficFactoryTimezones("session", fetchFn);
+    assert.deepEqual(timezones, ["Asia/Jakarta", "Europe/Dublin"]);
+  });
+
   it("creates a campaign with the nested collection/pricing shape, resolving ISO2 countries to ISO3, then resolves its id by name", async () => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
     const fetchFn: TfFetch = async (input, init) => {
@@ -463,6 +492,7 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
         browserIds: [5],
         osIds: [20],
         languageIds: [1],
+        carrierIds: [7],
         startDate: "2026-11-01",
         endDate: "2026-12-01",
         totalImpressions: 100000,
@@ -471,6 +501,7 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
         sites: { targeted: [], blocked: ["bad-site.com"] },
         keywords: { targeted: ["promo"], blocked: [] },
         ipRanges: { targeted: [], blocked: [] },
+        dayParting: { timezone: "Asia/Jakarta", parting: [{ day: 1, hours: [9, 10, 11] }] },
       },
       fetchFn
     );
@@ -478,6 +509,8 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.deepEqual(postBody?.browsers, { type: "targeted", elements: [5] });
     assert.deepEqual(postBody?.operating_systems, { type: "targeted", elements: [20] });
     assert.deepEqual(postBody?.languages, { type: "targeted", elements: [1] });
+    assert.deepEqual(postBody?.carriers, { type: "targeted", elements: [7] });
+    assert.deepEqual(postBody?.day_parting, { timezone: "Asia/Jakarta", parting: [{ day: 1, hours: [9, 10, 11] }] });
     assert.equal(postBody?.start_date, "2026-11-01");
     assert.equal(postBody?.end_date, "2026-12-01");
     assert.equal(postBody?.total_impressions, 100000);
@@ -669,6 +702,8 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
         sites: { targeted: ["example.com"], blocked: [] },
         keywords: { targeted: [], blocked: ["spam"] },
         ip_ranges: { targeted: [], blocked: [] },
+        carriers: { elements: [7] },
+        day_parting: { timezone: "Asia/Jakarta", parting: [{ day: 1, hours: [9, 10] }] },
       });
     };
     const detail = await getTrafficFactoryCampaign("session", 123, fetchFn);
@@ -685,6 +720,9 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.deepEqual(detail.categoryIds, [1, 2]);
     assert.deepEqual(detail.deviceIds, [10]);
     assert.deepEqual(detail.osIds, [20, 21]);
+    assert.deepEqual(detail.carrierIds, [7]);
+    assert.equal(detail.dayPartingTimezone, "Asia/Jakarta");
+    assert.deepEqual(detail.dayParting, [{ day: 1, hours: [9, 10] }]);
     assert.deepEqual(detail.sites, { targeted: ["example.com"], blocked: [] });
     assert.deepEqual(detail.keywords, { targeted: [], blocked: ["spam"] });
   });

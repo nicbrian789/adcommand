@@ -12,6 +12,8 @@ import {
   getTrafficFactoryBrowsers,
   getTrafficFactoryOperatingSystems,
   getTrafficFactoryLanguages,
+  getTrafficFactoryCarriers,
+  getTrafficFactoryTimezones,
 } from "@/lib/integrations/trafficfactory";
 import { TrafficStarsCreateCampaignForm } from "@/components/dashboard/TrafficStarsCreateCampaignForm";
 import { TrafficFactoryCreateCampaignForm } from "@/components/dashboard/TrafficFactoryCreateCampaignForm";
@@ -72,16 +74,18 @@ export default async function CreateCampaignPage({ params }: { params: Promise<{
   }
 
   if (network.provider === "traffic_factory") {
-    let adTypes, categories, devices, browsers, operatingSystems, languages;
+    let adTypes, categories, devices, browsers, operatingSystems, languages, carriers, timezones;
     try {
       const sessionToken = await getTrafficFactorySessionToken(apiKey);
-      [adTypes, categories, devices, browsers, operatingSystems, languages] = await Promise.all([
+      [adTypes, categories, devices, browsers, operatingSystems, languages, carriers, timezones] = await Promise.all([
         getTrafficFactoryAdvertiserAdTypes(sessionToken),
         getTrafficFactoryCategories(sessionToken),
         getTrafficFactoryDevices(sessionToken),
         getTrafficFactoryBrowsers(sessionToken),
         getTrafficFactoryOperatingSystems(sessionToken),
         getTrafficFactoryLanguages(sessionToken),
+        getTrafficFactoryCarriers(sessionToken),
+        getTrafficFactoryTimezones(sessionToken),
       ]);
     } catch (err) {
       return (
@@ -113,6 +117,8 @@ export default async function CreateCampaignPage({ params }: { params: Promise<{
           browsers={browsers}
           operatingSystems={operatingSystems}
           languages={languages}
+          carriers={carriers}
+          timezones={timezones}
         />
       </div>
     );

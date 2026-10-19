@@ -149,6 +149,7 @@ export async function updateTrafficFactoryCampaignAction(
     browserIds: number[];
     osIds: number[];
     languageIds: number[];
+    carrierIds: number[];
     startDate: string;
     endDate: string;
     totalImpressions: number;
@@ -162,6 +163,8 @@ export async function updateTrafficFactoryCampaignAction(
     keywords: string[];
     ipRangesMode: "targeted" | "blocked";
     ipRanges: string[];
+    dayPartingTimezone: string;
+    dayParting: { day: number; hours: number[] }[];
   }
 ): Promise<void> {
   try {
@@ -183,6 +186,9 @@ export async function updateTrafficFactoryCampaignAction(
       browserIds: input.browserIds,
       osIds: input.osIds,
       languageIds: input.languageIds,
+      carrierIds: input.carrierIds,
+      dayParting:
+        input.dayParting.length > 0 ? { timezone: input.dayPartingTimezone || "UTC", parting: input.dayParting } : undefined,
       startDate: input.startDate || null,
       endDate: input.endDate || null,
       totalImpressions: input.totalImpressions,
