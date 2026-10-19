@@ -2,7 +2,9 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { UpdateNameForm } from "@/components/dashboard/UpdateNameForm";
 import { ChangePasswordForm } from "@/components/dashboard/ChangePasswordForm";
-import { User, Mail, Lock } from "lucide-react";
+import { ConnectAiProviderForm } from "@/components/dashboard/ConnectAiProviderForm";
+import { getWorkspaceAiPublicSettings } from "@/lib/ai/workspaceAi";
+import { User, Mail, Lock, Sparkles } from "lucide-react";
 
 export default async function SettingsPage() {
   if (!isSupabaseConfigured) {
@@ -18,13 +20,16 @@ export default async function SettingsPage() {
     return <div className="rounded-xl border border-border bg-surface p-10 text-center text-muted">Sesi kamu sudah habis. Silakan masuk lagi.</div>;
   }
 
-  const { data: profile } = await supabase.from("profiles").select("full_name, role").eq("id", user.id).maybeSingle();
+  const [{ data: profile }, aiSettings] = await Promise.all([
+    supabase.from("profiles").select("full_name, role").eq("id", user.id).maybeSingle(),
+    getWorkspaceAiPublicSettings(supabase, user.id),
+  ]);
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-lg font-semibold">Settings</h1>
-        <p className="text-sm text-muted">Kelola akun kamu sendiri.</p>
+        <p className="text-sm text-muted">Kelola akun dan koneksi AI workspace.</p>
       </div>
 
       <div className="rounded-xl border border-border bg-surface p-6 space-y-5 max-w-lg">
@@ -56,6 +61,20 @@ export default async function SettingsPage() {
           Ganti Password
         </div>
         <ChangePasswordForm />
+      </div>
+
+      <div className="rounded-xl border border-border bg-surface p-6 space-y-4 max-w-lg">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Sparkles size={16} />
+          AI Assisten (ChatGPT / Claude)
+        </div>
+        <ConnectAiProviderForm
+          canManage={aiSettings.canManage}
+          initialProvider={aiSettings.provider}
+          initialModel={aiSettings.model}
+          hint={aiSettings.hint}
+          source={aiSettings.source}
+        />
       </div>
     </div>
   );

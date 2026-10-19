@@ -48,7 +48,9 @@ export function formatCpr(cpr: number | null): string {
 export type RankedCampaign = {
   id: string;
   name: string;
+  networkId: string;
   networkName: string;
+  provider: string | null;
   status: string;
   spend: number;
   impressions: number;

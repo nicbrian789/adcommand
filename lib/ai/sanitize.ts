@@ -27,7 +27,7 @@ export function safeClientError(err: unknown, fallback = "Gagal memanggil AI Ass
   if (looksLikeSecret(msg)) return fallback;
   // Keep short, known operational messages; truncate anything else.
   if (
-    /belum dikonfigurasi|Sesi kamu|Pesan kosong|terlalu banyak|bukan JSON|Panggilan AI gagal|Respons AI kosong|Belum ada workspace|Jangan tempel/i.test(
+    /belum dikonfigurasi|Sesi kamu|Pesan kosong|terlalu banyak|bukan JSON|Panggilan AI gagal|Respons AI kosong|Belum ada workspace|Jangan tempel|AI_CREDENTIALS_SECRET|Hanya Owner|Provider tidak|API key terlalu|belum tersambung|Format kredensial/i.test(
       msg
     )
   ) {

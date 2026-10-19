@@ -45,7 +45,8 @@ Tanpa env Supabase, auth gating di-skip hanya di development. Di production/Verc
 | `SUPABASE_SERVICE_ROLE_KEY` | ya | Admin/cron/invite |
 | `CRON_SECRET` | ya (prod) | Bearer token cron |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | tidak | Alert ke Telegram |
-| `OPENAI_API_KEY` | tidak (AI) | AI Assisten Fase 1 |
+| `AI_CREDENTIALS_SECRET` | ya (BYOK) | Enkripsi API key AI di Settings |
+| `OPENAI_API_KEY` | tidak | Fallback AI server (OpenAI) jika workspace belum BYOK |
 | `OPENAI_MODEL` / `OPENAI_BASE_URL` | tidak | Model & endpoint OpenAI-compatible |
 
 ## Cron (Vercel)
@@ -63,4 +64,4 @@ Keduanya membutuhkan header `Authorization: Bearer $CRON_SECRET` (Vercel Cron me
 - Networks + sync (TrafficStars, TrafficJunky, Adsterra, JuicyAds, Traffic Factory)
 - Campaigns, analytics, GEO, websites, reports CSV, alerts
 - Buat/edit campaign TrafficStars
-- AI Assisten Fase 1 (baca data + saran CPR/CTR/alert; butuh `OPENAI_API_KEY`)
+- AI Assisten Fase 2 (saran + usulan sync/pause–resume TrafficStars dengan konfirmasi; butuh `OPENAI_API_KEY`)

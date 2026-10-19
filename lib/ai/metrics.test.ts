@@ -26,7 +26,9 @@ describe("AI assistant metrics", () => {
       {
         id: "a",
         name: "cheap",
+        networkId: "n1",
         networkName: "N",
+        provider: "trafficstars",
         status: "Running",
         spend: 10,
         impressions: 100,
@@ -39,7 +41,9 @@ describe("AI assistant metrics", () => {
       {
         id: "b",
         name: "expensive",
+        networkId: "n1",
         networkName: "N",
+        provider: "trafficstars",
         status: "Running",
         spend: 100,
         impressions: 100,
@@ -52,7 +56,9 @@ describe("AI assistant metrics", () => {
       {
         id: "c",
         name: "no-conv",
+        networkId: "n1",
         networkName: "N",
+        provider: "adsterra",
         status: "Running",
         spend: 80,
         impressions: 100,

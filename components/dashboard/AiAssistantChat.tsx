@@ -1,22 +1,34 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Loader2, Send, Sparkles } from "lucide-react";
-import { askAssistant } from "@/app/dashboard/assistant/actions";
+import { Check, Loader2, Send, Sparkles, X } from "lucide-react";
+import {
+  askAssistant,
+  cancelAssistantAction,
+  confirmAssistantAction,
+  type ProposedActionView,
+} from "@/app/dashboard/assistant/actions";
 
-type Turn = { role: "user" | "assistant"; content: string };
+type Turn = {
+  role: "user" | "assistant" | "system";
+  content: string;
+  proposal?: ProposedActionView | null;
+  proposalStatus?: "pending" | "done" | "cancelled" | "error";
+  proposalResult?: string;
+};
 
 const STARTERS = [
   "Kenapa CPR saya mahal?",
   "Campaign mana yang paling boros?",
-  "Ada alert penting yang harus saya tindaklanjuti?",
-  "Apa langkah terbaik menurunkan biaya hasil?",
+  "Pause campaign TrafficStars yang CPR-nya paling mahal",
+  "Sync network yang datanya paling stale",
 ];
 
 export function AiAssistantChat() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [actingToken, setActingToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -37,7 +49,10 @@ export function AiAssistantChat() {
 
     const result = await askAssistant(
       message,
-      nextTurns.slice(0, -1).map((t) => ({ role: t.role, content: t.content }))
+      nextTurns
+        .filter((t) => t.role === "user" || t.role === "assistant")
+        .slice(0, -1)
+        .map((t) => ({ role: t.role as "user" | "assistant", content: t.content }))
     );
 
     setLoading(false);
@@ -46,8 +61,54 @@ export function AiAssistantChat() {
       return;
     }
 
-    setMeta(`Konteks: ${result.contextMeta.workspaceName} · ${result.contextMeta.dateFrom} → ${result.contextMeta.dateTo}`);
-    setTurns([...nextTurns, { role: "assistant", content: result.reply }]);
+    setMeta(
+      `Konteks: ${result.contextMeta.workspaceName} · ${result.contextMeta.dateFrom} → ${result.contextMeta.dateTo} · AI ${result.contextMeta.provider} (${result.contextMeta.source})`
+    );
+    setTurns([
+      ...nextTurns,
+      {
+        role: "assistant",
+        content: result.reply,
+        proposal: result.proposal,
+        proposalStatus: result.proposal ? "pending" : undefined,
+      },
+    ]);
+  }
+
+  async function onConfirm(token: string, turnIndex: number) {
+    setActingToken(token);
+    setError(null);
+    const result = await confirmAssistantAction(token);
+    setActingToken(null);
+    setTurns((prev) =>
+      prev.map((t, i) =>
+        i === turnIndex
+          ? {
+              ...t,
+              proposalStatus: result.ok ? "done" : "error",
+              proposalResult: result.ok ? result.message : result.error,
+            }
+          : t
+      )
+    );
+  }
+
+  async function onCancel(token: string, turnIndex: number) {
+    setActingToken(token);
+    setError(null);
+    const result = await cancelAssistantAction(token);
+    setActingToken(null);
+    setTurns((prev) =>
+      prev.map((t, i) =>
+        i === turnIndex
+          ? {
+              ...t,
+              proposalStatus: result.ok ? "cancelled" : "error",
+              proposalResult: result.ok ? result.message : result.error,
+            }
+          : t
+      )
+    );
   }
 
   return (
@@ -59,7 +120,7 @@ export function AiAssistantChat() {
         <div className="min-w-0">
           <h1 className="text-sm font-semibold">AI Assisten</h1>
           <p className="text-xs text-muted">
-            Fase 1: baca data workspace + saran perbaikan (CPR, CTR, alert). Belum mengeksekusi pause/edit ads.
+            Fase 2: saran + usulan aksi terbatas (sync / pause–resume TrafficStars) dengan konfirmasi eksplisit.
           </p>
           {meta ? <p className="text-[11px] text-muted mt-1">{meta}</p> : null}
         </div>
@@ -69,7 +130,7 @@ export function AiAssistantChat() {
         {turns.length === 0 ? (
           <div className="space-y-3">
             <p className="text-sm text-muted">
-              Tanyakan masalah ads kamu. Assisten memakai statistik 7 hari terakhir dan alert workspace (tanpa API key).
+              Tanyakan masalah ads atau minta usulan aksi. Eksekusi hanya setelah kamu tekan Konfirmasi.
             </p>
             <div className="flex flex-wrap gap-2">
               {STARTERS.map((s) => (
@@ -87,18 +148,65 @@ export function AiAssistantChat() {
         ) : null}
 
         {turns.map((t, i) => (
-          <div
-            key={`${t.role}-${i}`}
-            className={`rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
-              t.role === "user"
-                ? "bg-accent/15 text-foreground ml-8"
-                : "bg-surface-2/80 text-foreground mr-8 border border-border/60"
-            }`}
-          >
-            <div className="text-[10px] uppercase tracking-wide text-muted mb-1">
-              {t.role === "user" ? "Kamu" : "Assisten"}
+          <div key={`${t.role}-${i}`} className="space-y-2">
+            <div
+              className={`rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+                t.role === "user"
+                  ? "bg-accent/15 text-foreground ml-8"
+                  : "bg-surface-2/80 text-foreground mr-8 border border-border/60"
+              }`}
+            >
+              <div className="text-[10px] uppercase tracking-wide text-muted mb-1">
+                {t.role === "user" ? "Kamu" : "Assisten"}
+              </div>
+              {t.content}
             </div>
-            {t.content}
+
+            {t.proposal ? (
+              <div className="mr-8 rounded-lg border border-accent/40 bg-accent/5 px-3 py-3 space-y-2">
+                <div className="text-xs font-medium text-foreground">{t.proposal.label}</div>
+                <p className="text-xs text-muted whitespace-pre-wrap">{t.proposal.detail}</p>
+                {t.proposalStatus === "pending" ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={actingToken === t.proposal.token}
+                      onClick={() => onConfirm(t.proposal!.token, i)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-accent text-white px-3 py-1.5 text-xs font-medium hover:bg-accent/90 disabled:opacity-60"
+                    >
+                      {actingToken === t.proposal.token ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Check size={12} />
+                      )}
+                      Konfirmasi
+                    </button>
+                    <button
+                      type="button"
+                      disabled={actingToken === t.proposal.token}
+                      onClick={() => onCancel(t.proposal!.token, i)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:text-foreground disabled:opacity-60"
+                    >
+                      <X size={12} />
+                      Batalkan
+                    </button>
+                    <span className="text-[10px] text-muted">Berlaku ~{t.proposal.expiresInSec}s</span>
+                  </div>
+                ) : (
+                  <p
+                    className={`text-xs ${
+                      t.proposalStatus === "error"
+                        ? "text-danger"
+                        : t.proposalStatus === "cancelled"
+                          ? "text-muted"
+                          : "text-success"
+                    }`}
+                  >
+                    {t.proposalResult}
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
         ))}
 
@@ -123,7 +231,7 @@ export function AiAssistantChat() {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Contoh: kenapa CPR campaign X mahal?"
+          placeholder="Contoh: pause campaign TS yang CPR-nya mahal"
           disabled={loading}
           className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent disabled:opacity-60"
         />

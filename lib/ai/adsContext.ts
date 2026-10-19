@@ -12,6 +12,7 @@ import {
   type RankedCampaign,
 } from "@/lib/ai/metrics";
 import { redactSecrets } from "@/lib/ai/sanitize";
+import type { ActionCatalog } from "@/lib/ai/actionValidate";
 
 const LOOKBACK_DAYS = 7;
 const MAX_CAMPAIGNS_IN_CONTEXT = 25;
@@ -33,6 +34,7 @@ export type AdsAssistantContext = {
   dateTo: string;
   role: "Owner" | "Member";
   summaryText: string;
+  catalog: ActionCatalog;
 };
 
 /**
@@ -154,7 +156,9 @@ export async function buildAdsAssistantContext(
     return {
       id,
       name: c.name,
+      networkId: c.network_id,
       networkName: network?.name ?? "(network)",
+      provider: network?.provider ?? null,
       status: c.status,
       spend: t.spend,
       impressions: t.impressions,
@@ -165,6 +169,21 @@ export async function buildAdsAssistantContext(
       ctr: ctr(t.clicks, t.impressions),
     };
   });
+
+  const catalog: ActionCatalog = {
+    networks: networkRows.map((n) => ({ id: n.id, name: n.name, provider: n.provider })),
+    campaigns: campaigns.map((c) => {
+      const network = networkMap.get(c.network_id);
+      return {
+        id: c.id,
+        name: c.name,
+        status: c.status,
+        networkId: c.network_id,
+        networkName: network?.name ?? "(network)",
+        provider: network?.provider ?? null,
+      };
+    }),
+  };
 
   const expensive = rankByExpensiveCpr(ranked).slice(0, MAX_CAMPAIGNS_IN_CONTEXT);
 
@@ -190,7 +209,7 @@ export async function buildAdsAssistantContext(
       const bal = typeof n.balance === "number" ? formatMoney(n.balance) : "n/a";
       const synced = n.last_synced_at ?? "belum pernah";
       lines.push(
-        `- ${n.name} [${n.provider ?? "unknown"}] saldo=${bal} last_sync=${synced} | spend=${formatMoney(t.spend)} cpr=${formatCpr(costPerResult(t.spend, t.conversions))}`
+        `- id=${n.id} ${n.name} [${n.provider ?? "unknown"}] saldo=${bal} last_sync=${synced} | spend=${formatMoney(t.spend)} cpr=${formatCpr(costPerResult(t.spend, t.conversions))}`
       );
     }
   }
@@ -202,7 +221,7 @@ export async function buildAdsAssistantContext(
   } else {
     for (const c of expensive) {
       lines.push(
-        `- ${c.name} @ ${c.networkName} [${c.status}] spend=${formatMoney(c.spend)} conv=${c.conversions} cpr=${formatCpr(c.cpr)} ctr=${formatPct(c.ctr)}`
+        `- id=${c.id} ${c.name} @ ${c.networkName} [${c.provider ?? "?"}|${c.status}] spend=${formatMoney(c.spend)} conv=${c.conversions} cpr=${formatCpr(c.cpr)} ctr=${formatPct(c.ctr)}`
       );
     }
   }
@@ -227,5 +246,6 @@ export async function buildAdsAssistantContext(
     dateTo,
     role,
     summaryText: lines.join("\n"),
+    catalog,
   };
 }

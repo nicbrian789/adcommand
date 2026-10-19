@@ -79,6 +79,19 @@ Dokumentasi ini mendeskripsikan tabel/RPC yang dipakai aplikasi. Terapkan di Sup
 - `member_filter` text/nullable
 - `created_at` timestamptz
 
+### `workspace_ai_settings` (AI Assisten BYOK)
+- `workspace_id` uuid PK → workspaces
+- `provider` text (`openai` | `anthropic`)
+- `api_key_ciphertext` text (AES-GCM; jangan simpan plaintext)
+- `api_key_hint` text/nullable
+- `model` text/nullable
+- `base_url` text/nullable
+- `updated_by` uuid/nullable → auth.users
+- `updated_at` timestamptz
+- RLS: tanpa policy untuk authenticated (akses hanya via service role di server action)
+
+Migrasi: `supabase/migrations/20261019_workspace_ai_settings.sql`
+
 ## RPCs (dipakai app)
 
 - `connect_network(…)` — simpan API key network (dipanggil dari UI connect key)
