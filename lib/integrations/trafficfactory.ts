@@ -674,7 +674,7 @@ async function findTrafficFactoryCampaignByName(
   sessionToken: string,
   name: string,
   fetchFn: TfFetch
-): Promise<number | null> {
+): Promise<{ id: number | null; rawText: string }> {
   const url = new URL(`${TRAFFIC_FACTORY_BASE_URL}/campaigns`);
   url.searchParams.set("custom_search", name);
   url.searchParams.set("limit", "50");
@@ -696,7 +696,11 @@ async function findTrafficFactoryCampaignByName(
     const id = pickFirstNumber(r, ["id"]);
     if (id !== null && (best === null || id > best)) best = id;
   }
-  return best;
+  return { id: best, rawText: text };
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export type CreateTrafficFactoryCampaignInput = {
@@ -756,12 +760,29 @@ export async function createTrafficFactoryCampaign(
     throwTrafficFactoryHttpError("/campaigns", res.status, text);
   }
 
-  const id = await findTrafficFactoryCampaignByName(sessionToken, input.name, fetchFn);
-  if (id === null) {
+  // The 200 body isn't documented in the spec, but try it anyway in case it does carry an id —
+  // avoids the name-search round trip (and its failure modes) entirely when it's there.
+  try {
+    const data = JSON.parse(text);
+    const row = asRecord(data) ?? asRecord(asRecord(data)?.result);
+    const directId = row ? pickFirstNumber(row, ["id"]) : null;
+    if (directId !== null) return { id: directId };
+  } catch {
+    // not JSON, or no usable id — fall through to the name search
+  }
+
+  let lookup = await findTrafficFactoryCampaignByName(sessionToken, input.name, fetchFn);
+  if (lookup.id === null) {
+    // Give the API a moment in case the new campaign isn't immediately searchable, then try once more.
+    await sleep(1500);
+    lookup = await findTrafficFactoryCampaignByName(sessionToken, input.name, fetchFn);
+  }
+  if (lookup.id === null) {
     throw new Error(
-      `Campaign berhasil dibuat di Traffic Factory tapi gagal nemuin ID-nya lagi (cari nama "${input.name}"). Cek langsung di dashboard Traffic Factory.`
+      `Campaign berhasil dibuat di Traffic Factory (respons POST: ${text.slice(0, 300)}) tapi gagal nemuin ID-nya lagi lewat pencarian nama "${input.name}" (respons pencarian: ${lookup.rawText.slice(0, 300)}). Cek langsung di dashboard Traffic Factory.`
     );
   }
+  const id = lookup.id;
   return { id };
 }
 
