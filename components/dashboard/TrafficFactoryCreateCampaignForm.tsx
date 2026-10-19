@@ -65,6 +65,20 @@ export function TrafficFactoryCreateCampaignForm({
     });
   }
 
+  const allFilteredSelected = filteredCategories.length > 0 && filteredCategories.every((c) => categoryIds.has(c.id));
+
+  function toggleAllFiltered() {
+    setCategoryIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        for (const c of filteredCategories) next.delete(c.id);
+      } else {
+        for (const c of filteredCategories) next.add(c.id);
+      }
+      return next;
+    });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -229,6 +243,13 @@ export function TrafficFactoryCreateCampaignForm({
           className={`${inputClass} mb-2`}
         />
         <div className="max-h-48 overflow-y-auto rounded-lg border border-border bg-background divide-y divide-border/60">
+          {filteredCategories.length > 0 ? (
+            <label className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-surface-2 font-medium">
+              <input type="checkbox" checked={allFilteredSelected} onChange={toggleAllFiltered} />
+              {allFilteredSelected ? "Hapus centang semua" : "Centang semua"}
+              {categoryFilter ? ` (${filteredCategories.length} hasil cari)` : ` (${filteredCategories.length})`}
+            </label>
+          ) : null}
           {filteredCategories.length === 0 ? (
             <p className="text-xs text-muted px-3 py-2">Tidak ada kategori cocok.</p>
           ) : (
