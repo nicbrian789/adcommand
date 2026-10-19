@@ -12,6 +12,7 @@ import {
   uploadTrafficStarsBannerImage,
   type TrafficStarsBanner,
 } from "@/lib/integrations/trafficstars";
+import { getTrafficFactorySessionToken, updateTrafficFactoryCampaign } from "@/lib/integrations/trafficfactory";
 
 async function resolveTrafficStarsCampaign(campaignId: string) {
   const supabase = await createClient();
@@ -84,6 +85,77 @@ export async function updateTrafficStarsCampaignAction(
     return { status: String(result?.status ?? "") };
   } catch (err) {
     console.error("updateTrafficStarsCampaignAction error:", err);
+    const message = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga saat update campaign.";
+    throw new Error(message);
+  }
+}
+
+async function resolveTrafficFactoryCampaign(campaignId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sesi kamu sudah habis. Silakan masuk lagi.");
+
+  const { data: campaign, error: campaignError } = await supabase
+    .from("campaigns")
+    .select("id, external_id, network_id")
+    .eq("id", campaignId)
+    .maybeSingle();
+  if (campaignError || !campaign) throw new Error("Campaign tidak ditemukan.");
+  if (!campaign.external_id) throw new Error("Campaign ini belum punya ID Traffic Factory.");
+
+  const { data: network, error: networkError } = await supabase
+    .from("ad_networks")
+    .select("provider")
+    .eq("id", campaign.network_id)
+    .maybeSingle();
+  if (networkError || !network || network.provider !== "traffic_factory") {
+    throw new Error("Aksi ini cuma tersedia buat campaign Traffic Factory.");
+  }
+
+  const { data: apiKey, error: keyError } = await supabase.rpc("get_network_api_key", {
+    p_network_id: campaign.network_id,
+  });
+  if (keyError || !apiKey) throw new Error(keyError?.message ?? "API key belum tersimpan.");
+
+  const sessionToken = await getTrafficFactorySessionToken(apiKey);
+
+  return { supabase, campaign, sessionToken, externalId: Number(campaign.external_id) };
+}
+
+export async function updateTrafficFactoryCampaignAction(
+  campaignId: string,
+  input: {
+    name: string;
+    pricingModel: number;
+    price: number;
+    maxDailyBudget: number;
+    totalBudgetLimit: number;
+  }
+): Promise<void> {
+  try {
+    if (!input.name.trim()) throw new Error("Nama campaign wajib diisi.");
+    if (!input.price || input.price <= 0) throw new Error("Harga/bid harus lebih dari 0.");
+
+    const { supabase, campaign, sessionToken, externalId } = await resolveTrafficFactoryCampaign(campaignId);
+
+    await updateTrafficFactoryCampaign(sessionToken, externalId, {
+      name: input.name.trim(),
+      pricingModel: input.pricingModel,
+      price: input.price,
+      maxDailyBudget: input.maxDailyBudget,
+      totalBudgetLimit: input.totalBudgetLimit,
+    });
+
+    const { error: updateError } = await supabase.from("campaigns").update({ name: input.name.trim() }).eq("id", campaign.id);
+    if (updateError) console.error("Gagal update nama campaign lokal:", updateError.message);
+
+    revalidatePath("/dashboard/campaigns");
+    revalidatePath(`/dashboard/campaigns/${campaignId}/edit`);
+    revalidatePath("/dashboard");
+  } catch (err) {
+    console.error("updateTrafficFactoryCampaignAction error:", err);
     const message = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga saat update campaign.";
     throw new Error(message);
   }

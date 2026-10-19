@@ -6,7 +6,9 @@ import { AddCampaignForm } from "@/components/dashboard/AddCampaignForm";
 import { DateRangeFilter } from "@/components/dashboard/DateRangeFilter";
 import { MemberFilterTabs } from "@/components/dashboard/MemberFilterTabs";
 import { CampaignPauseButton } from "@/components/dashboard/CampaignPauseButton";
+import { CampaignDeleteButton } from "@/components/dashboard/CampaignDeleteButton";
 import { resolveDateRange } from "@/lib/dateRange";
+import { isDeleteCampaignSupported, isManageCampaignSupported } from "@/lib/networks";
 import { Megaphone, AlertTriangle, Pencil } from "lucide-react";
 
 type CampaignRow = {
@@ -272,7 +274,9 @@ export default async function CampaignsPage({
                     const t = totals[c.id];
                     const ctr = t && t.impressions > 0 ? (t.clicks / t.impressions) * 100 : null;
                     const roas = t && t.spend > 0 ? t.revenue / t.spend : null;
-                    const canManage = networkProviderMap.get(c.network_id) === "trafficstars" && !!c.external_id;
+                    const provider = networkProviderMap.get(c.network_id) ?? null;
+                    const canManage = isManageCampaignSupported(provider) && !!c.external_id;
+                    const canDelete = isDeleteCampaignSupported(provider) && !!c.external_id;
                     return (
                       <tr key={c.id} className="border-b border-border/60 last:border-0 hover:bg-surface-2/60">
                         <td className="px-4 py-3 pl-6">{c.name}</td>
@@ -300,6 +304,7 @@ export default async function CampaignsPage({
                                 Edit
                               </Link>
                               <CampaignPauseButton campaignId={c.id} status={c.status} />
+                              {canDelete ? <CampaignDeleteButton campaignId={c.id} campaignName={c.name} /> : null}
                             </div>
                           ) : null}
                         </td>

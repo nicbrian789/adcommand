@@ -469,3 +469,312 @@ export async function getTrafficFactoryCountryStats(
   }
   return parsed;
 }
+
+/**
+ * Campaign create/edit/pause/delete.
+ *
+ * Confirmed against the live swagger.json (api.trafficfactory.com/v2/docs/swagger.json):
+ *  - POST /campaigns requires: name, advertiser_ad_type, media_storage_template, countries,
+ *    categories. Its 200 response isn't documented (only 401/404/500 are), so the created
+ *    campaign's id is resolved afterwards via GET /campaigns?custom_search=<name>.
+ *  - countries/categories are "collections": { type: "targeted"|"blocked", elements: [...] }.
+ *    Country elements are plain ISO codes ({ country: "US" }), not dictionary ids.
+ *  - pricing is a nested { model, price } object on create/update, but comes back as flat
+ *    `price`/`pricing_model` fields on the read model (GET /campaigns, GET /campaigns/{id}).
+ *  - PUT /campaigns/play|pause|delete all take the same { campaign_ids: number[] } body.
+ *  - advertiser_ad_type/media_storage_template options come from GET /collections/advertiser-ad-types.
+ *  - delete is a real delete (the campaign is gone), unlike TrafficStars which only has pause.
+ */
+
+export type TrafficFactoryAdvertiserAdType = {
+  id: number;
+  name: string;
+  mediaStorageTemplates: string[];
+  sizes: string[];
+};
+
+export async function getTrafficFactoryAdvertiserAdTypes(
+  sessionToken: string,
+  fetchFn: TfFetch = fetch
+): Promise<TrafficFactoryAdvertiserAdType[]> {
+  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/collections/advertiser-ad-types`, {
+    headers: authHeaders(sessionToken),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throwTrafficFactoryHttpError("/collections/advertiser-ad-types", res.status, text);
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Respons /collections/advertiser-ad-types Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
+  }
+  const rows = unwrapList(data);
+  return rows
+    .map((row) => {
+      const id = pickFirstNumber(row, ["id"]);
+      const name = pickFirstString(row, ["name"]);
+      if (id === null || !name) return null;
+      const templates = Array.isArray(row.media_storage_templates)
+        ? (row.media_storage_templates as unknown[]).filter((t): t is string => typeof t === "string")
+        : [];
+      const sizes = Array.isArray(row.size) ? (row.size as unknown[]).filter((s): s is string => typeof s === "string") : [];
+      return { id, name, mediaStorageTemplates: templates, sizes };
+    })
+    .filter((x): x is TrafficFactoryAdvertiserAdType => x !== null);
+}
+
+export type TrafficFactoryCategory = {
+  id: number;
+  name: string;
+  longName: string;
+};
+
+export async function getTrafficFactoryCategories(
+  sessionToken: string,
+  fetchFn: TfFetch = fetch
+): Promise<TrafficFactoryCategory[]> {
+  const { items } = await fetchPaginatedRecords(sessionToken, "/collections/categories", {}, fetchFn);
+  const categories: TrafficFactoryCategory[] = [];
+  for (const row of items) {
+    if (Number(row.selectable) !== 1) continue;
+    const id = pickFirstNumber(row, ["id"]);
+    const name = pickFirstString(row, ["name"]);
+    if (id === null || !name) continue;
+    categories.push({ id, name, longName: pickFirstString(row, ["long_name"]) ?? name });
+  }
+  return categories;
+}
+
+export type TrafficFactoryCampaignDetail = {
+  id: number;
+  name: string;
+  /** Raw numeric status: 1 Running, 0 Paused, -1 Archived. */
+  status: number;
+  statusLabel: string | null;
+  price: number | null;
+  pricingModel: number | null;
+  maxDailyBudget: number | null;
+  totalBudgetLimit: number | null;
+  advertiserAdType: number | null;
+  mediaStorageTemplate: string | null;
+};
+
+function parseCampaignDetail(row: Record<string, unknown>): TrafficFactoryCampaignDetail {
+  const calculatedStatus = asRecord(row.calculated_status);
+  return {
+    id: pickFirstNumber(row, ["id"]) ?? 0,
+    name: pickFirstString(row, ["name"]) ?? "",
+    status: pickFirstNumber(row, ["status"]) ?? 0,
+    statusLabel: calculatedStatus ? pickFirstString(calculatedStatus, ["status"]) : null,
+    price: pickFirstNumber(row, ["price"]),
+    pricingModel: pickFirstNumber(row, ["pricing_model"]),
+    maxDailyBudget: pickFirstNumber(row, ["max_daily_budget"]),
+    totalBudgetLimit: pickFirstNumber(row, ["total_budget_limit"]),
+    advertiserAdType: pickFirstNumber(row, ["advertiser_ad_type"]),
+    mediaStorageTemplate: pickFirstString(row, ["media_storage_template"]),
+  };
+}
+
+export async function getTrafficFactoryCampaign(
+  sessionToken: string,
+  campaignId: number,
+  fetchFn: TfFetch = fetch
+): Promise<TrafficFactoryCampaignDetail> {
+  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}`, {
+    headers: authHeaders(sessionToken),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throwTrafficFactoryHttpError(`/campaigns/${campaignId}`, res.status, text);
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Respons /campaigns/${campaignId} Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
+  }
+  const row = asRecord(data);
+  if (!row) throw new Error(`Respons /campaigns/${campaignId} Traffic Factory tidak terduga: ${text.slice(0, 300)}`);
+  return parseCampaignDetail(row);
+}
+
+async function findTrafficFactoryCampaignByName(
+  sessionToken: string,
+  name: string,
+  fetchFn: TfFetch
+): Promise<number | null> {
+  const url = new URL(`${TRAFFIC_FACTORY_BASE_URL}/campaigns`);
+  url.searchParams.set("custom_search", name);
+  url.searchParams.set("limit", "50");
+  url.searchParams.set("offset", "0");
+  const res = await fetchFn(url, { headers: authHeaders(sessionToken) });
+  const text = await res.text();
+  if (!res.ok) throwTrafficFactoryHttpError("/campaigns", res.status, text);
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Respons /campaigns Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
+  }
+  const rows = unwrapList(data);
+  const exact = rows.filter((r) => (pickFirstString(r, ["name"]) ?? "").trim().toLowerCase() === name.trim().toLowerCase());
+  const pool = exact.length > 0 ? exact : rows;
+  let best: number | null = null;
+  for (const r of pool) {
+    const id = pickFirstNumber(r, ["id"]);
+    if (id !== null && (best === null || id > best)) best = id;
+  }
+  return best;
+}
+
+export type CreateTrafficFactoryCampaignInput = {
+  name: string;
+  advertiserAdType: number;
+  mediaStorageTemplate: string;
+  categoryIds: number[];
+  countries: string[];
+  pricingModel: number;
+  price: number;
+  maxDailyBudget?: number;
+  totalBudgetLimit?: number;
+};
+
+function buildCampaignTargetingBody(input: {
+  categoryIds: number[];
+  countries: string[];
+  pricingModel: number;
+  price: number;
+  maxDailyBudget?: number;
+  totalBudgetLimit?: number;
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    categories: { type: "targeted", elements: input.categoryIds },
+    countries: { type: "targeted", elements: input.countries.map((c) => ({ country: c })) },
+    pricing: { model: input.pricingModel, price: input.price },
+  };
+  if (input.maxDailyBudget) {
+    body.max_daily_budget = input.maxDailyBudget;
+    body.daily_limit_type = 1; // 0 None, 1 Budget, 2 Impressions
+  }
+  if (input.totalBudgetLimit) body.total_budget_limit = input.totalBudgetLimit;
+  return body;
+}
+
+/** Creates the campaign, then resolves its id via a name lookup since POST /campaigns' 200 body isn't documented. */
+export async function createTrafficFactoryCampaign(
+  sessionToken: string,
+  input: CreateTrafficFactoryCampaignInput,
+  fetchFn: TfFetch = fetch
+): Promise<{ id: number }> {
+  const body: Record<string, unknown> = {
+    name: input.name,
+    advertiser_ad_type: input.advertiserAdType,
+    media_storage_template: input.mediaStorageTemplate,
+    ...buildCampaignTargetingBody(input),
+  };
+
+  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns`, {
+    method: "POST",
+    headers: { ...authHeaders(sessionToken), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throwTrafficFactoryHttpError("/campaigns", res.status, text);
+  }
+
+  const id = await findTrafficFactoryCampaignByName(sessionToken, input.name, fetchFn);
+  if (id === null) {
+    throw new Error(
+      `Campaign berhasil dibuat di Traffic Factory tapi gagal nemuin ID-nya lagi (cari nama "${input.name}"). Cek langsung di dashboard Traffic Factory.`
+    );
+  }
+  return { id };
+}
+
+export type UpdateTrafficFactoryCampaignInput = {
+  name?: string;
+  categoryIds?: number[];
+  countries?: string[];
+  pricingModel?: number;
+  price?: number;
+  maxDailyBudget?: number;
+  totalBudgetLimit?: number;
+};
+
+export async function updateTrafficFactoryCampaign(
+  sessionToken: string,
+  campaignId: number,
+  input: UpdateTrafficFactoryCampaignInput,
+  fetchFn: TfFetch = fetch
+): Promise<void> {
+  const body: Record<string, unknown> = {};
+  if (input.name !== undefined) body.name = input.name;
+  if (input.categoryIds !== undefined) body.categories = { type: "targeted", elements: input.categoryIds };
+  if (input.countries !== undefined) body.countries = { type: "targeted", elements: input.countries.map((c) => ({ country: c })) };
+  if (input.pricingModel !== undefined && input.price !== undefined) {
+    body.pricing = { model: input.pricingModel, price: input.price };
+  }
+  if (input.maxDailyBudget !== undefined) {
+    body.max_daily_budget = input.maxDailyBudget;
+    body.daily_limit_type = input.maxDailyBudget > 0 ? 1 : 0;
+  }
+  if (input.totalBudgetLimit !== undefined) body.total_budget_limit = input.totalBudgetLimit;
+
+  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}`, {
+    method: "PUT",
+    headers: { ...authHeaders(sessionToken), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throwTrafficFactoryHttpError(`/campaigns/${campaignId}`, res.status, text);
+  }
+}
+
+async function bulkCampaignAction(
+  sessionToken: string,
+  path: "/campaigns/play" | "/campaigns/pause" | "/campaigns/delete",
+  campaignIds: number[],
+  fetchFn: TfFetch
+): Promise<void> {
+  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}${path}`, {
+    method: "PUT",
+    headers: { ...authHeaders(sessionToken), "Content-Type": "application/json" },
+    body: JSON.stringify({ campaign_ids: campaignIds }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throwTrafficFactoryHttpError(path, res.status, text);
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return; // best-effort error array check below; a non-JSON 2xx body is still a success
+  }
+  const record = asRecord(data);
+  const errors = record && Array.isArray(record.errors) ? (record.errors as unknown[]) : [];
+  if (errors.length > 0) {
+    throw new Error(`Traffic Factory menolak sebagian aksi: ${errors.map(String).join("; ").slice(0, 300)}`);
+  }
+}
+
+export async function setTrafficFactoryCampaignsRunState(
+  sessionToken: string,
+  campaignIds: number[],
+  action: "play" | "pause",
+  fetchFn: TfFetch = fetch
+): Promise<void> {
+  await bulkCampaignAction(sessionToken, action === "play" ? "/campaigns/play" : "/campaigns/pause", campaignIds, fetchFn);
+}
+
+export async function deleteTrafficFactoryCampaigns(
+  sessionToken: string,
+  campaignIds: number[],
+  fetchFn: TfFetch = fetch
+): Promise<void> {
+  await bulkCampaignAction(sessionToken, "/campaigns/delete", campaignIds, fetchFn);
+}

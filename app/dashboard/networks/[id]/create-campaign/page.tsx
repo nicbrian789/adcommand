@@ -4,7 +4,13 @@ import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { getTrafficStarsAccessToken, getTrafficStarsAdFormats } from "@/lib/integrations/trafficstars";
+import {
+  getTrafficFactorySessionToken,
+  getTrafficFactoryAdvertiserAdTypes,
+  getTrafficFactoryCategories,
+} from "@/lib/integrations/trafficfactory";
 import { TrafficStarsCreateCampaignForm } from "@/components/dashboard/TrafficStarsCreateCampaignForm";
+import { TrafficFactoryCreateCampaignForm } from "@/components/dashboard/TrafficFactoryCreateCampaignForm";
 
 export default async function CreateCampaignPage({ params }: { params: Promise<{ id: string }> }) {
   if (!isSupabaseConfigured) {
@@ -36,14 +42,14 @@ export default async function CreateCampaignPage({ params }: { params: Promise<{
     </Link>
   );
 
-  if (network.provider !== "trafficstars") {
+  if (network.provider !== "trafficstars" && network.provider !== "traffic_factory") {
     return (
       <div className="space-y-4">
         {backLink}
         <div className="rounded-xl border border-border bg-surface p-10 text-center text-muted flex flex-col items-center gap-2">
           <AlertTriangle size={24} />
           <p className="font-medium text-foreground">Belum tersedia buat {network.name}</p>
-          <p className="text-sm">Create Campaign baru jalan buat TrafficStars sekarang. Adsterra & Traffic Factory nyusul.</p>
+          <p className="text-sm">Create Campaign baru jalan buat TrafficStars & Traffic Factory sekarang.</p>
         </div>
       </div>
     );
@@ -57,6 +63,41 @@ export default async function CreateCampaignPage({ params }: { params: Promise<{
         <div className="rounded-xl border border-danger/30 bg-danger/10 p-10 text-center text-danger">
           API key belum tersimpan buat network ini.
         </div>
+      </div>
+    );
+  }
+
+  if (network.provider === "traffic_factory") {
+    let adTypes, categories;
+    try {
+      const sessionToken = await getTrafficFactorySessionToken(apiKey);
+      [adTypes, categories] = await Promise.all([
+        getTrafficFactoryAdvertiserAdTypes(sessionToken),
+        getTrafficFactoryCategories(sessionToken),
+      ]);
+    } catch (err) {
+      return (
+        <div className="space-y-4">
+          {backLink}
+          <div className="rounded-xl border border-danger/30 bg-danger/10 p-10 text-center text-danger">
+            Gagal ambil daftar jenis iklan/kategori: {err instanceof Error ? err.message : "error tak terduga"}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-5">
+        {backLink}
+        <div>
+          <h1 className="text-lg font-semibold">Buat Campaign Baru — {network.name}</h1>
+          <p className="text-sm text-muted">
+            Campaign bakal langsung kebuat di akun Traffic Factory kamu dengan status Draft. Creative (variation) ditambahin manual lewat
+            website Traffic Factory dulu sebelum campaign bisa jalan.
+          </p>
+        </div>
+
+        <TrafficFactoryCreateCampaignForm networkId={network.id} adTypes={adTypes} categories={categories} />
       </div>
     );
   }

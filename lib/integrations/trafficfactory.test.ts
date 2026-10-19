@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   canPersistTrafficFactoryBalance,
+  createTrafficFactoryCampaign,
+  deleteTrafficFactoryCampaigns,
+  getTrafficFactoryAdvertiserAdTypes,
+  getTrafficFactoryCampaign,
+  getTrafficFactoryCategories,
   getTrafficFactoryCountryStats,
   getTrafficFactoryDailyStats,
   getTrafficFactorySessionToken,
@@ -16,7 +21,9 @@ import {
   parseTrafficFactorySessionToken,
   parseTrafficFactoryUser,
   pickFirstNumber,
+  setTrafficFactoryCampaignsRunState,
   unwrapTrafficFactoryStatisticsPayload,
+  updateTrafficFactoryCampaign,
   TF_BALANCE_KEYS,
   TF_IMPRESSION_KEYS,
   TF_SPEND_KEYS,
@@ -285,5 +292,192 @@ describe("Traffic Factory country breakdown (/statistics/a/country)", () => {
     const rows = await getTrafficFactoryCountryStats("session", "2026-10-05", "2026-10-05", fetchFn);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].country, "ID");
+  });
+});
+
+describe("Traffic Factory campaign create/edit/pause/delete", () => {
+  it("fetches advertiser ad type presets with their media storage templates", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/collections\/advertiser-ad-types$/);
+      return jsonResponse({
+        result: [{ id: 5, name: "Popunder", media_storage_templates: ["popunder"], size: ["Fullscreen"] }],
+      });
+    };
+    const types = await getTrafficFactoryAdvertiserAdTypes("session", fetchFn);
+    assert.equal(types.length, 1);
+    assert.equal(types[0].id, 5);
+    assert.deepEqual(types[0].mediaStorageTemplates, ["popunder"]);
+  });
+
+  it("fetches categories and drops non-selectable ones", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/collections\/categories$/);
+      return jsonResponse({
+        result: [
+          { id: 1, name: "Adult", long_name: "Adult", parent: "0", selectable: 1 },
+          { id: 2, name: "All", long_name: "All", parent: "0", selectable: 0 },
+        ],
+        request_metadata: { limit: 100, offset: 0, count: 2 },
+      });
+    };
+    const categories = await getTrafficFactoryCategories("session", fetchFn);
+    assert.equal(categories.length, 1);
+    assert.equal(categories[0].id, 1);
+  });
+
+  it("creates a campaign with the nested collection/pricing shape, then resolves its id by name", async () => {
+    const calls: { method: string; path: string; body?: unknown }[] = [];
+    const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+      calls.push({ method, path: url.pathname + url.search, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (method === "POST" && url.pathname === "/v2/campaigns") {
+        return jsonResponse({}, 200); // 200 body isn't documented — must not be relied on
+      }
+      if (method === "GET" && url.pathname === "/v2/campaigns") {
+        assert.equal(url.searchParams.get("custom_search"), "My Campaign");
+        return jsonResponse({ result: [{ id: 777, name: "My Campaign" }] });
+      }
+      return jsonResponse({ error: "unexpected" }, 500);
+    };
+
+    const result = await createTrafficFactoryCampaign(
+      "session",
+      {
+        name: "My Campaign",
+        advertiserAdType: 5,
+        mediaStorageTemplate: "popunder",
+        categoryIds: [1, 2],
+        countries: ["US", "ID"],
+        pricingModel: 2,
+        price: 0.5,
+        maxDailyBudget: 10,
+        totalBudgetLimit: 100,
+      },
+      fetchFn
+    );
+
+    assert.equal(result.id, 777);
+    const postCall = calls.find((c) => c.method === "POST")!;
+    const body = postCall.body as Record<string, unknown>;
+    assert.equal(body.name, "My Campaign");
+    assert.equal(body.advertiser_ad_type, 5);
+    assert.equal(body.media_storage_template, "popunder");
+    assert.deepEqual(body.categories, { type: "targeted", elements: [1, 2] });
+    assert.deepEqual(body.countries, { type: "targeted", elements: [{ country: "US" }, { country: "ID" }] });
+    assert.deepEqual(body.pricing, { model: 2, price: 0.5 });
+    assert.equal(body.max_daily_budget, 10);
+    assert.equal(body.daily_limit_type, 1);
+    assert.equal(body.total_budget_limit, 100);
+  });
+
+  it("prefers an exact name match over a highest-id fallback when resolving the created campaign", async () => {
+    const fetchFn: TfFetch = async (input, init) => {
+      if (init?.method === "POST") return jsonResponse({});
+      return jsonResponse({
+        result: [
+          { id: 50, name: "Promo Summer Extended" },
+          { id: 42, name: "Promo Summer" },
+        ],
+      });
+    };
+    const result = await createTrafficFactoryCampaign(
+      "session",
+      {
+        name: "Promo Summer",
+        advertiserAdType: 1,
+        mediaStorageTemplate: "popunder",
+        categoryIds: [1],
+        countries: ["US"],
+        pricingModel: 2,
+        price: 1,
+      },
+      fetchFn
+    );
+    assert.equal(result.id, 42);
+  });
+
+  it("throws a clear error when the created campaign can't be found by name afterwards", async () => {
+    const fetchFn: TfFetch = async (input, init) => {
+      if (init?.method === "POST") return jsonResponse({});
+      return jsonResponse({ result: [] });
+    };
+    await assert.rejects(
+      () =>
+        createTrafficFactoryCampaign(
+          "session",
+          {
+            name: "Ghost Campaign",
+            advertiserAdType: 1,
+            mediaStorageTemplate: "popunder",
+            categoryIds: [1],
+            countries: ["US"],
+            pricingModel: 2,
+            price: 1,
+          },
+          fetchFn
+        ),
+      /gagal nemuin ID/
+    );
+  });
+
+  it("only sends fields that were actually provided on update (partial PUT)", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      assert.equal(init?.method, "PUT");
+      assert.match(url.pathname, /\/campaigns\/123$/);
+      capturedBody = JSON.parse(String(init?.body));
+      return new Response("", { status: 200 });
+    };
+    await updateTrafficFactoryCampaign("session", 123, { name: "New Name", pricingModel: 1, price: 2 }, fetchFn);
+    assert.deepEqual(capturedBody, { name: "New Name", pricing: { model: 1, price: 2 } });
+  });
+
+  it("parses a campaign detail response, splitting out the calculated status label", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/campaigns\/123$/);
+      return jsonResponse({
+        id: 123,
+        name: "Promo",
+        status: 1,
+        calculated_status: { id: 1, status: "Running" },
+        price: 0.5,
+        pricing_model: 2,
+        max_daily_budget: 10,
+        total_budget_limit: 0,
+        advertiser_ad_type: 5,
+        media_storage_template: "popunder",
+      });
+    };
+    const detail = await getTrafficFactoryCampaign("session", 123, fetchFn);
+    assert.equal(detail.status, 1);
+    assert.equal(detail.statusLabel, "Running");
+    assert.equal(detail.price, 0.5);
+    assert.equal(detail.pricingModel, 2);
+  });
+
+  it("sends campaign_ids for play/pause and surfaces partial errors from the bulk response", async () => {
+    const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/campaigns\/pause$/);
+      assert.deepEqual(JSON.parse(String(init?.body)), { campaign_ids: [123] });
+      return jsonResponse({ message: "done", errors: ["campaign 123 is locked"], campaigns: [] });
+    };
+    await assert.rejects(() => setTrafficFactoryCampaignsRunState("session", [123], "pause", fetchFn), /menolak sebagian aksi/);
+  });
+
+  it("deletes campaigns via PUT /campaigns/delete with the same bulk body shape", async () => {
+    const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      assert.equal(init?.method, "PUT");
+      assert.match(url.pathname, /\/campaigns\/delete$/);
+      assert.deepEqual(JSON.parse(String(init?.body)), { campaign_ids: [1, 2] });
+      return jsonResponse({ message: "deleted", campaigns: [] });
+    };
+    await deleteTrafficFactoryCampaigns("session", [1, 2], fetchFn);
   });
 });

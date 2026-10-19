@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Pause, Play, Loader2 } from "lucide-react";
-import { setTrafficStarsCampaignRunStateAction } from "@/app/dashboard/campaigns/actions";
+import { setCampaignRunStateAction } from "@/app/dashboard/campaigns/actions";
 
 export function CampaignPauseButton({ campaignId, status }: { campaignId: string; status: string }) {
   const [loading, setLoading] = useState(false);
@@ -15,7 +15,7 @@ export function CampaignPauseButton({ campaignId, status }: { campaignId: string
     setLoading(true);
     setError(null);
     try {
-      await setTrafficStarsCampaignRunStateAction(campaignId, action);
+      await setCampaignRunStateAction(campaignId, action);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal mengubah status campaign.");
     } finally {

@@ -8,6 +8,10 @@ import {
   createTrafficStarsBanner,
   uploadTrafficStarsBannerImage,
 } from "@/lib/integrations/trafficstars";
+import {
+  getTrafficFactorySessionToken,
+  createTrafficFactoryCampaign,
+} from "@/lib/integrations/trafficfactory";
 
 export async function createTrafficStarsCampaignAction(
   networkId: string,
@@ -171,6 +175,88 @@ export async function createTrafficStarsBannerAction(
   } catch (err) {
     console.error("createTrafficStarsBannerAction error:", err);
     const message = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga saat bikin banner.";
+    throw new Error(message);
+  }
+}
+
+export async function createTrafficFactoryCampaignAction(
+  networkId: string,
+  input: {
+    name: string;
+    advertiserAdType: number;
+    mediaStorageTemplate: string;
+    categoryIds: number[];
+    countries: string[];
+    pricingModel: number;
+    price: number;
+    maxDailyBudget: number;
+    totalBudgetLimit: number;
+  }
+): Promise<{ id: number }> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Sesi kamu sudah habis. Silakan masuk lagi.");
+
+    const { data: network, error: networkError } = await supabase
+      .from("ad_networks")
+      .select("id, name, workspace_id, provider")
+      .eq("id", networkId)
+      .maybeSingle();
+    if (networkError || !network) throw new Error("Network tidak ditemukan.");
+    if (network.provider !== "traffic_factory") throw new Error("Network ini bukan Traffic Factory.");
+
+    if (!input.name.trim()) throw new Error("Nama campaign wajib diisi.");
+    if (!input.advertiserAdType) throw new Error("Pilih jenis iklan dulu.");
+    if (!input.mediaStorageTemplate) throw new Error("Pilih format media dulu.");
+    if (input.categoryIds.length === 0) throw new Error("Pilih minimal 1 kategori.");
+    if (input.countries.length === 0) throw new Error("Pilih minimal 1 negara target.");
+    if (!input.price || input.price <= 0) throw new Error("Harga/bid harus lebih dari 0.");
+
+    const { data: apiKey, error: keyError } = await supabase.rpc("get_network_api_key", {
+      p_network_id: networkId,
+    });
+    if (keyError || !apiKey) throw new Error(keyError?.message ?? "API key belum tersimpan.");
+
+    const sessionToken = await getTrafficFactorySessionToken(apiKey);
+
+    const result = await createTrafficFactoryCampaign(sessionToken, {
+      name: input.name.trim(),
+      advertiserAdType: input.advertiserAdType,
+      mediaStorageTemplate: input.mediaStorageTemplate,
+      categoryIds: input.categoryIds,
+      countries: input.countries,
+      pricingModel: input.pricingModel,
+      price: input.price,
+      maxDailyBudget: input.maxDailyBudget || undefined,
+      totalBudgetLimit: input.totalBudgetLimit || undefined,
+    });
+
+    const { error: insertError } = await supabase.from("campaigns").insert({
+      workspace_id: network.workspace_id,
+      network_id: network.id,
+      external_id: String(result.id),
+      name: input.name.trim(),
+      status: "Draft",
+    });
+    if (insertError) {
+      console.error("Gagal simpan campaign baru ke database:", insertError.message);
+    }
+
+    try {
+      revalidatePath("/dashboard/networks");
+      revalidatePath("/dashboard/campaigns");
+      revalidatePath("/dashboard");
+    } catch (revalidateErr) {
+      console.error("revalidatePath gagal:", revalidateErr);
+    }
+
+    return result;
+  } catch (err) {
+    console.error("createTrafficFactoryCampaignAction error:", err);
+    const message = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga saat bikin campaign.";
     throw new Error(message);
   }
 }
