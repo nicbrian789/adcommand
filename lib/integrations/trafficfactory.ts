@@ -803,7 +803,47 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export type CreateTrafficFactoryCampaignInput = {
+/** Shared by create and update — every field here is optional so update can send a partial PUT. */
+type ExtendedTargetingInput = {
+  deviceIds?: number[];
+  browserIds?: number[];
+  osIds?: number[];
+  languageIds?: number[];
+  startDate?: string | null;
+  endDate?: string | null;
+  totalImpressions?: number;
+  maxDailyImpressions?: number;
+  frequencyCapping?: { enabled: boolean; impressions?: number; minutes?: number };
+  sites?: TrafficFactoryMultiStringList;
+  keywords?: TrafficFactoryMultiStringList;
+  ipRanges?: TrafficFactoryMultiStringList;
+};
+
+function applyExtendedTargetingBody(body: Record<string, unknown>, input: ExtendedTargetingInput): void {
+  if (input.deviceIds !== undefined) body.devices = { type: "targeted", elements: input.deviceIds };
+  if (input.browserIds !== undefined) body.browsers = { type: "targeted", elements: input.browserIds };
+  if (input.osIds !== undefined) body.operating_systems = { type: "targeted", elements: input.osIds };
+  if (input.languageIds !== undefined) body.languages = { type: "targeted", elements: input.languageIds };
+  if (input.startDate !== undefined) body.start_date = input.startDate;
+  if (input.endDate !== undefined) body.end_date = input.endDate;
+  if (input.totalImpressions !== undefined) body.total_impressions = input.totalImpressions;
+  if (input.maxDailyImpressions !== undefined) {
+    body.max_daily_impressions = input.maxDailyImpressions;
+    if (input.maxDailyImpressions > 0 && body.daily_limit_type === undefined) body.daily_limit_type = 2;
+  }
+  if (input.frequencyCapping !== undefined) {
+    body.frequency_capping = {
+      enabled: input.frequencyCapping.enabled,
+      impressions: input.frequencyCapping.impressions,
+      minutes: input.frequencyCapping.minutes,
+    };
+  }
+  if (input.sites !== undefined) body.sites = input.sites;
+  if (input.keywords !== undefined) body.keywords = input.keywords;
+  if (input.ipRanges !== undefined) body.ip_ranges = input.ipRanges;
+}
+
+export type CreateTrafficFactoryCampaignInput = ExtendedTargetingInput & {
   name: string;
   advertiserAdType: number;
   mediaStorageTemplate: string;
@@ -852,6 +892,7 @@ export async function createTrafficFactoryCampaign(
     ...(input.size ? { size: input.size } : {}),
     ...buildCampaignTargetingBody({ ...input, countries: resolveCountryIso3Codes(input.countries, countries) }),
   };
+  applyExtendedTargetingBody(body, input);
 
   const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns`, {
     method: "POST",
@@ -889,28 +930,16 @@ export async function createTrafficFactoryCampaign(
   return { id };
 }
 
-export type UpdateTrafficFactoryCampaignInput = {
+export type UpdateTrafficFactoryCampaignInput = ExtendedTargetingInput & {
   name?: string;
   /** 1 Running, 0 Paused, -1 Archived — prefer setTrafficFactoryCampaignsRunState for play/pause. */
   status?: number;
   categoryIds?: number[];
   countries?: string[];
-  deviceIds?: number[];
-  browserIds?: number[];
-  osIds?: number[];
-  languageIds?: number[];
   pricingModel?: number;
   price?: number;
   maxDailyBudget?: number;
   totalBudgetLimit?: number;
-  startDate?: string | null;
-  endDate?: string | null;
-  totalImpressions?: number;
-  maxDailyImpressions?: number;
-  frequencyCapping?: { enabled: boolean; impressions?: number; minutes?: number };
-  sites?: TrafficFactoryMultiStringList;
-  keywords?: TrafficFactoryMultiStringList;
-  ipRanges?: TrafficFactoryMultiStringList;
 };
 
 export async function updateTrafficFactoryCampaign(
@@ -923,10 +952,6 @@ export async function updateTrafficFactoryCampaign(
   if (input.name !== undefined) body.name = input.name;
   if (input.status !== undefined) body.status = input.status;
   if (input.categoryIds !== undefined) body.categories = { type: "targeted", elements: input.categoryIds };
-  if (input.deviceIds !== undefined) body.devices = { type: "targeted", elements: input.deviceIds };
-  if (input.browserIds !== undefined) body.browsers = { type: "targeted", elements: input.browserIds };
-  if (input.osIds !== undefined) body.operating_systems = { type: "targeted", elements: input.osIds };
-  if (input.languageIds !== undefined) body.languages = { type: "targeted", elements: input.languageIds };
   if (input.countries !== undefined) {
     const countries = await getTrafficFactoryCountries(sessionToken, fetchFn);
     const iso3 = resolveCountryIso3Codes(input.countries, countries);
@@ -940,23 +965,7 @@ export async function updateTrafficFactoryCampaign(
     body.daily_limit_type = input.maxDailyBudget > 0 ? 1 : 0;
   }
   if (input.totalBudgetLimit !== undefined) body.total_budget_limit = dollarsToCents(input.totalBudgetLimit);
-  if (input.startDate !== undefined) body.start_date = input.startDate;
-  if (input.endDate !== undefined) body.end_date = input.endDate;
-  if (input.totalImpressions !== undefined) body.total_impressions = input.totalImpressions;
-  if (input.maxDailyImpressions !== undefined) {
-    body.max_daily_impressions = input.maxDailyImpressions;
-    if (input.maxDailyImpressions > 0 && input.maxDailyBudget === undefined) body.daily_limit_type = 2;
-  }
-  if (input.frequencyCapping !== undefined) {
-    body.frequency_capping = {
-      enabled: input.frequencyCapping.enabled,
-      impressions: input.frequencyCapping.impressions,
-      minutes: input.frequencyCapping.minutes,
-    };
-  }
-  if (input.sites !== undefined) body.sites = input.sites;
-  if (input.keywords !== undefined) body.keywords = input.keywords;
-  if (input.ipRanges !== undefined) body.ip_ranges = input.ipRanges;
+  applyExtendedTargetingBody(body, input);
 
   const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}`, {
     method: "PUT",

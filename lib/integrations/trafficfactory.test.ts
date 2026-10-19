@@ -438,6 +438,55 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.deepEqual(postBody?.countries, { type: "targeted", elements: [{ country: "IDN" }] });
   });
 
+  it("includes extended targeting (devices/dates/impressions/capping/block-lists) on create too, when given", async () => {
+    let postBody: Record<string, unknown> | undefined;
+    const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
+      if (init?.method === "POST") {
+        postBody = JSON.parse(String(init.body));
+        return jsonResponse({});
+      }
+      return jsonResponse({ result: [{ id: 1, name: "Full campaign" }] });
+    };
+    await createTrafficFactoryCampaign(
+      "session",
+      {
+        name: "Full campaign",
+        advertiserAdType: 1,
+        mediaStorageTemplate: "popunder",
+        categoryIds: [1],
+        countries: ["US"],
+        pricingModel: 2,
+        price: 1,
+        deviceIds: [10],
+        browserIds: [5],
+        osIds: [20],
+        languageIds: [1],
+        startDate: "2026-11-01",
+        endDate: "2026-12-01",
+        totalImpressions: 100000,
+        maxDailyImpressions: 5000,
+        frequencyCapping: { enabled: true, impressions: 3, minutes: 1440 },
+        sites: { targeted: [], blocked: ["bad-site.com"] },
+        keywords: { targeted: ["promo"], blocked: [] },
+        ipRanges: { targeted: [], blocked: [] },
+      },
+      fetchFn
+    );
+    assert.deepEqual(postBody?.devices, { type: "targeted", elements: [10] });
+    assert.deepEqual(postBody?.browsers, { type: "targeted", elements: [5] });
+    assert.deepEqual(postBody?.operating_systems, { type: "targeted", elements: [20] });
+    assert.deepEqual(postBody?.languages, { type: "targeted", elements: [1] });
+    assert.equal(postBody?.start_date, "2026-11-01");
+    assert.equal(postBody?.end_date, "2026-12-01");
+    assert.equal(postBody?.total_impressions, 100000);
+    assert.equal(postBody?.max_daily_impressions, 5000);
+    assert.deepEqual(postBody?.frequency_capping, { enabled: true, impressions: 3, minutes: 1440 });
+    assert.deepEqual(postBody?.sites, { targeted: [], blocked: ["bad-site.com"] });
+    assert.deepEqual(postBody?.keywords, { targeted: ["promo"], blocked: [] });
+  });
+
   it("rejects a country code Traffic Factory doesn't recognize instead of sending it blind", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));

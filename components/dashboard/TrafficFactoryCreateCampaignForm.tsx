@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, CheckCircle2, Upload } from "lucide-react";
 import { createTrafficFactoryCampaignAction, createTrafficFactoryVariationAction } from "@/app/dashboard/networks/[id]/create-campaign/actions";
 import { FilePreviewThumbnails } from "@/components/dashboard/FilePreviewThumbnails";
-import type { TrafficFactoryAdvertiserAdType, TrafficFactoryCategory } from "@/lib/integrations/trafficfactory";
+import { MultiSelectChecklist } from "@/components/dashboard/MultiSelectChecklist";
+import type { TrafficFactoryAdvertiserAdType, TrafficFactoryCategory, TrafficFactoryDictItem } from "@/lib/integrations/trafficfactory";
 
 const inputClass =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent";
@@ -20,14 +21,29 @@ const PRICING_MODELS = [
   { value: 8, label: "Smart Bid" },
 ];
 
+function linesToList(text: string) {
+  return text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+}
+
 export function TrafficFactoryCreateCampaignForm({
   networkId,
   adTypes,
   categories,
+  devices,
+  browsers,
+  operatingSystems,
+  languages,
 }: {
   networkId: string;
   adTypes: TrafficFactoryAdvertiserAdType[];
   categories: TrafficFactoryCategory[];
+  devices: TrafficFactoryDictItem[];
+  browsers: TrafficFactoryDictItem[];
+  operatingSystems: TrafficFactoryDictItem[];
+  languages: TrafficFactoryDictItem[];
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -36,12 +52,30 @@ export function TrafficFactoryCreateCampaignForm({
   const [mediaStorageTemplate, setMediaStorageTemplate] = useState<string>(selectedAdType?.mediaStorageTemplates[0] ?? "");
   const [size, setSize] = useState<string>(selectedAdType?.sizes[0] ?? "");
   const [categoryIds, setCategoryIds] = useState<Set<number>>(new Set());
-  const [categoryFilter, setCategoryFilter] = useState("");
   const [countries, setCountries] = useState("");
   const [pricingModel, setPricingModel] = useState(2);
   const [price, setPrice] = useState("");
   const [maxDailyBudget, setMaxDailyBudget] = useState("");
   const [totalBudgetLimit, setTotalBudgetLimit] = useState("");
+
+  const [deviceIds, setDeviceIds] = useState<Set<number>>(new Set());
+  const [browserIds, setBrowserIds] = useState<Set<number>>(new Set());
+  const [osIds, setOsIds] = useState<Set<number>>(new Set());
+  const [languageIds, setLanguageIds] = useState<Set<number>>(new Set());
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [totalImpressions, setTotalImpressions] = useState("");
+  const [maxDailyImpressions, setMaxDailyImpressions] = useState("");
+  const [freqEnabled, setFreqEnabled] = useState(false);
+  const [freqImpressions, setFreqImpressions] = useState("");
+  const [freqMinutes, setFreqMinutes] = useState("");
+  const [sitesMode, setSitesMode] = useState<"targeted" | "blocked">("blocked");
+  const [sitesText, setSitesText] = useState("");
+  const [keywordsMode, setKeywordsMode] = useState<"targeted" | "blocked">("blocked");
+  const [keywordsText, setKeywordsText] = useState("");
+  const [ipRangesMode, setIpRangesMode] = useState<"targeted" | "blocked">("blocked");
+  const [ipRangesText, setIpRangesText] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ id: number } | null>(null);
@@ -52,40 +86,11 @@ export function TrafficFactoryCreateCampaignForm({
   const [variationError, setVariationError] = useState<string | null>(null);
   const [variationDone, setVariationDone] = useState<{ created: number } | null>(null);
 
-  const filteredCategories = useMemo(() => {
-    const q = categoryFilter.trim().toLowerCase();
-    if (!q) return categories;
-    return categories.filter((c) => c.longName.toLowerCase().includes(q));
-  }, [categories, categoryFilter]);
-
   function changeAdType(id: number) {
     setAdvertiserAdType(id);
     const t = adTypes.find((x) => x.id === id);
     setMediaStorageTemplate(t?.mediaStorageTemplates[0] ?? "");
     setSize(t?.sizes[0] ?? "");
-  }
-
-  function toggleCategory(id: number) {
-    setCategoryIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  const allFilteredSelected = filteredCategories.length > 0 && filteredCategories.every((c) => categoryIds.has(c.id));
-
-  function toggleAllFiltered() {
-    setCategoryIds((prev) => {
-      const next = new Set(prev);
-      if (allFilteredSelected) {
-        for (const c of filteredCategories) next.delete(c.id);
-      } else {
-        for (const c of filteredCategories) next.add(c.id);
-      }
-      return next;
-    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -108,6 +113,23 @@ export function TrafficFactoryCreateCampaignForm({
         price: Number(price),
         maxDailyBudget: maxDailyBudget ? Number(maxDailyBudget) : 0,
         totalBudgetLimit: totalBudgetLimit ? Number(totalBudgetLimit) : 0,
+        deviceIds: [...deviceIds],
+        browserIds: [...browserIds],
+        osIds: [...osIds],
+        languageIds: [...languageIds],
+        startDate,
+        endDate,
+        totalImpressions: totalImpressions ? Number(totalImpressions) : 0,
+        maxDailyImpressions: maxDailyImpressions ? Number(maxDailyImpressions) : 0,
+        frequencyCappingEnabled: freqEnabled,
+        frequencyCappingImpressions: freqEnabled && freqImpressions ? Number(freqImpressions) : 0,
+        frequencyCappingMinutes: freqEnabled && freqMinutes ? Number(freqMinutes) : 0,
+        sitesMode,
+        sites: linesToList(sitesText),
+        keywordsMode,
+        keywords: linesToList(keywordsText),
+        ipRangesMode,
+        ipRanges: linesToList(ipRangesText),
       });
       setSuccess(result);
     } catch (err) {
@@ -226,157 +248,260 @@ export function TrafficFactoryCreateCampaignForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-surface p-6 space-y-4 max-w-lg">
-      <div>
-        <label className="block text-xs text-muted mb-1.5">Nama campaign</label>
-        <input
-          type="text"
-          required
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Campaign ABC"
-          className={inputClass}
-        />
-      </div>
-
-      <div>
-        <label className="block text-xs text-muted mb-1.5">Jenis iklan</label>
-        <select value={advertiserAdType} onChange={(e) => changeAdType(Number(e.target.value))} className={inputClass}>
-          {adTypes.length === 0 ? <option value={0}>Tidak ada jenis iklan tersedia</option> : null}
-          {adTypes.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {(selectedAdType?.mediaStorageTemplates.length ?? 0) > 1 ? (
+    <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-surface p-6 space-y-5 max-w-lg">
+      <div className="space-y-4">
         <div>
-          <label className="block text-xs text-muted mb-1.5">Format media</label>
-          <select value={mediaStorageTemplate} onChange={(e) => setMediaStorageTemplate(e.target.value)} className={inputClass}>
-            {selectedAdType!.mediaStorageTemplates.map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
-
-      {(selectedAdType?.sizes.length ?? 0) > 1 ? (
-        <div>
-          <label className="block text-xs text-muted mb-1.5">Ukuran</label>
-          <select value={size} onChange={(e) => setSize(e.target.value)} className={inputClass}>
-            {selectedAdType!.sizes.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs text-muted mb-1.5">Pricing model</label>
-          <select value={pricingModel} onChange={(e) => setPricingModel(Number(e.target.value))} className={inputClass}>
-            {PRICING_MODELS.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-muted mb-1.5">Harga/bid ($)</label>
+          <label className="block text-xs text-muted mb-1.5">Nama campaign</label>
           <input
-            type="number"
+            type="text"
             required
-            min="0.0001"
-            step="0.0001"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            placeholder="0.10"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Campaign ABC"
             className={inputClass}
           />
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs text-muted mb-1.5">Budget harian max, $ (opsional)</label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={maxDailyBudget}
-            onChange={(e) => setMaxDailyBudget(e.target.value)}
-            placeholder="Kosongin kalau nggak dibatasi"
-            className={inputClass}
-          />
+          <label className="block text-xs text-muted mb-1.5">Jenis iklan</label>
+          <select value={advertiserAdType} onChange={(e) => changeAdType(Number(e.target.value))} className={inputClass}>
+            {adTypes.length === 0 ? <option value={0}>Tidak ada jenis iklan tersedia</option> : null}
+            {adTypes.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
         </div>
-        <div>
-          <label className="block text-xs text-muted mb-1.5">Budget total, $ (opsional)</label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={totalBudgetLimit}
-            onChange={(e) => setTotalBudgetLimit(e.target.value)}
-            placeholder="Kosongin kalau nggak dibatasi"
-            className={inputClass}
-          />
+
+        {(selectedAdType?.mediaStorageTemplates.length ?? 0) > 1 ? (
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Format media</label>
+            <select value={mediaStorageTemplate} onChange={(e) => setMediaStorageTemplate(e.target.value)} className={inputClass}>
+              {selectedAdType!.mediaStorageTemplates.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+
+        {(selectedAdType?.sizes.length ?? 0) > 1 ? (
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Ukuran</label>
+            <select value={size} onChange={(e) => setSize(e.target.value)} className={inputClass}>
+              {selectedAdType!.sizes.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Pricing model</label>
+            <select value={pricingModel} onChange={(e) => setPricingModel(Number(e.target.value))} className={inputClass}>
+              {PRICING_MODELS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Harga/bid ($)</label>
+            <input
+              type="number"
+              required
+              min="0.0001"
+              step="0.0001"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="0.10"
+              className={inputClass}
+            />
+          </div>
         </div>
       </div>
 
-      <div>
-        <label className="block text-xs text-muted mb-1.5">Negara target, kode ISO 2 huruf pisah koma</label>
-        <input
-          type="text"
-          required
-          value={countries}
-          onChange={(e) => setCountries(e.target.value)}
-          placeholder="ID, US, SG"
-          className={inputClass}
-        />
+      <div className="border-t border-border/60 pt-4 space-y-4">
+        <h3 className="text-xs font-semibold text-muted uppercase tracking-wide">Budget &amp; Limit</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Budget harian max, $ (opsional)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={maxDailyBudget}
+              onChange={(e) => setMaxDailyBudget(e.target.value)}
+              placeholder="Kosongin kalau nggak dibatasi"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Budget total, $ (opsional)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={totalBudgetLimit}
+              onChange={(e) => setTotalBudgetLimit(e.target.value)}
+              placeholder="Kosongin kalau nggak dibatasi"
+              className={inputClass}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Total impression limit (opsional)</label>
+            <input
+              type="number"
+              min="0"
+              value={totalImpressions}
+              onChange={(e) => setTotalImpressions(e.target.value)}
+              placeholder="Kosongin kalau nggak dibatasi"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Max impression harian (opsional)</label>
+            <input
+              type="number"
+              min="0"
+              value={maxDailyImpressions}
+              onChange={(e) => setMaxDailyImpressions(e.target.value)}
+              placeholder="Kosongin kalau nggak dibatasi"
+              className={inputClass}
+            />
+          </div>
+        </div>
       </div>
 
-      <div>
-        <label className="block text-xs text-muted mb-1.5">
-          Kategori target {categoryIds.size > 0 ? `(${categoryIds.size} dipilih)` : null}
+      <div className="border-t border-border/60 pt-4 space-y-3">
+        <h3 className="text-xs font-semibold text-muted uppercase tracking-wide">Jadwal &amp; Frequency Cap</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Mulai tanggal (opsional)</label>
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-xs text-muted mb-1.5">Berakhir tanggal (opsional)</label>
+            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} />
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-xs cursor-pointer">
+          <input type="checkbox" checked={freqEnabled} onChange={(e) => setFreqEnabled(e.target.checked)} />
+          Batasi berapa kali iklan tayang ke 1 user
         </label>
-        <input
-          type="text"
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          placeholder="Cari kategori..."
-          className={`${inputClass} mb-2`}
-        />
-        <div className="max-h-48 overflow-y-auto rounded-lg border border-border bg-background divide-y divide-border/60">
-          {filteredCategories.length > 0 ? (
-            <label className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-surface-2 font-medium">
-              <input type="checkbox" checked={allFilteredSelected} onChange={toggleAllFiltered} />
-              {allFilteredSelected ? "Hapus centang semua" : "Centang semua"}
-              {categoryFilter ? ` (${filteredCategories.length} hasil cari)` : ` (${filteredCategories.length})`}
-            </label>
-          ) : null}
-          {filteredCategories.length === 0 ? (
-            <p className="text-xs text-muted px-3 py-2">Tidak ada kategori cocok.</p>
-          ) : (
-            filteredCategories.map((c) => (
-              <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-surface-2">
-                <input type="checkbox" checked={categoryIds.has(c.id)} onChange={() => toggleCategory(c.id)} />
-                {c.longName}
-              </label>
-            ))
-          )}
-        </div>
+        {freqEnabled ? (
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              type="number"
+              min="1"
+              value={freqImpressions}
+              onChange={(e) => setFreqImpressions(e.target.value)}
+              placeholder="Jumlah tayang"
+              className={inputClass}
+            />
+            <input
+              type="number"
+              min="1"
+              value={freqMinutes}
+              onChange={(e) => setFreqMinutes(e.target.value)}
+              placeholder="Per berapa menit"
+              className={inputClass}
+            />
+          </div>
+        ) : null}
       </div>
 
-      <p className="text-xs text-muted">
-        Targeting device/OS/browser/jadwal spesifik belum ada di sini — bisa diatur manual lewat website Traffic Factory kalau perlu.
-      </p>
+      <div className="border-t border-border/60 pt-4 space-y-4">
+        <h3 className="text-xs font-semibold text-muted uppercase tracking-wide">Targeting</h3>
+        <div>
+          <label className="block text-xs text-muted mb-1.5">Negara target, kode ISO 2 huruf pisah koma</label>
+          <input
+            type="text"
+            required
+            value={countries}
+            onChange={(e) => setCountries(e.target.value)}
+            placeholder="ID, US, SG"
+            className={inputClass}
+          />
+        </div>
+        <MultiSelectChecklist
+          label="Kategori"
+          items={categories.map((c) => ({ id: c.id, label: c.longName }))}
+          selected={categoryIds}
+          onChange={setCategoryIds}
+          placeholder="Cari kategori..."
+        />
+        <MultiSelectChecklist
+          label="Device"
+          items={devices.map((d) => ({ id: d.id, label: d.name }))}
+          selected={deviceIds}
+          onChange={setDeviceIds}
+          placeholder="Cari device..."
+        />
+        <MultiSelectChecklist
+          label="Browser"
+          items={browsers.map((b) => ({ id: b.id, label: b.name }))}
+          selected={browserIds}
+          onChange={setBrowserIds}
+          placeholder="Cari browser..."
+        />
+        <MultiSelectChecklist
+          label="Sistem operasi"
+          items={operatingSystems.map((o) => ({ id: o.id, label: o.name }))}
+          selected={osIds}
+          onChange={setOsIds}
+          placeholder="Cari OS..."
+        />
+        <MultiSelectChecklist
+          label="Bahasa browser"
+          items={languages.map((l) => ({ id: l.id, label: l.name }))}
+          selected={languageIds}
+          onChange={setLanguageIds}
+          placeholder="Cari bahasa..."
+        />
+        <p className="text-xs text-muted">
+          Kosongin kategori/device/browser/OS/bahasa berarti nggak ada filter (semua ditargetkan). Carrier, retargeting, zona premium,
+          day parting, dan goal optimization belum ada di sini — bisa diatur manual lewat website Traffic Factory kalau perlu.
+        </p>
+      </div>
+
+      <div className="border-t border-border/60 pt-4 space-y-4">
+        <h3 className="text-xs font-semibold text-muted uppercase tracking-wide">Block / Allow List (opsional)</h3>
+        {([
+          { key: "sites", label: "Website", mode: sitesMode, setMode: setSitesMode, text: sitesText, setText: setSitesText },
+          { key: "keywords", label: "Keyword", mode: keywordsMode, setMode: setKeywordsMode, text: keywordsText, setText: setKeywordsText },
+          { key: "ipRanges", label: "IP / IP range", mode: ipRangesMode, setMode: setIpRangesMode, text: ipRangesText, setText: setIpRangesText },
+        ] as const).map((f) => (
+          <div key={f.key}>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs text-muted">{f.label} (1 per baris)</label>
+              <select
+                value={f.mode}
+                onChange={(e) => f.setMode(e.target.value as "targeted" | "blocked")}
+                className="rounded border border-border bg-background px-1.5 py-0.5 text-xs"
+              >
+                <option value="blocked">Blokir</option>
+                <option value="targeted">Hanya izinkan</option>
+              </select>
+            </div>
+            <textarea
+              value={f.text}
+              onChange={(e) => f.setText(e.target.value)}
+              rows={2}
+              placeholder="Kosongin kalau nggak ada"
+              className={`${inputClass} resize-y`}
+            />
+          </div>
+        ))}
+      </div>
 
       {error ? (
         <div className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger whitespace-pre-wrap">{error}</div>

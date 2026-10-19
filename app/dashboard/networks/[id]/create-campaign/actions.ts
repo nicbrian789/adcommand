@@ -190,10 +190,27 @@ export async function createTrafficFactoryCampaignAction(
     size: string;
     categoryIds: number[];
     countries: string[];
+    deviceIds: number[];
+    browserIds: number[];
+    osIds: number[];
+    languageIds: number[];
     pricingModel: number;
     price: number;
     maxDailyBudget: number;
     totalBudgetLimit: number;
+    startDate: string;
+    endDate: string;
+    totalImpressions: number;
+    maxDailyImpressions: number;
+    frequencyCappingEnabled: boolean;
+    frequencyCappingImpressions: number;
+    frequencyCappingMinutes: number;
+    sitesMode: "targeted" | "blocked";
+    sites: string[];
+    keywordsMode: "targeted" | "blocked";
+    keywords: string[];
+    ipRangesMode: "targeted" | "blocked";
+    ipRanges: string[];
   }
 ): Promise<{ id: number }> {
   try {
@@ -237,6 +254,39 @@ export async function createTrafficFactoryCampaignAction(
       price: input.price,
       maxDailyBudget: input.maxDailyBudget || undefined,
       totalBudgetLimit: input.totalBudgetLimit || undefined,
+      deviceIds: input.deviceIds.length > 0 ? input.deviceIds : undefined,
+      browserIds: input.browserIds.length > 0 ? input.browserIds : undefined,
+      osIds: input.osIds.length > 0 ? input.osIds : undefined,
+      languageIds: input.languageIds.length > 0 ? input.languageIds : undefined,
+      startDate: input.startDate || undefined,
+      endDate: input.endDate || undefined,
+      totalImpressions: input.totalImpressions || undefined,
+      maxDailyImpressions: input.maxDailyImpressions || undefined,
+      frequencyCapping: input.frequencyCappingEnabled
+        ? {
+            enabled: true,
+            impressions: input.frequencyCappingImpressions || undefined,
+            minutes: input.frequencyCappingMinutes || undefined,
+          }
+        : undefined,
+      sites:
+        input.sites.length > 0
+          ? { targeted: input.sitesMode === "targeted" ? input.sites : [], blocked: input.sitesMode === "blocked" ? input.sites : [] }
+          : undefined,
+      keywords:
+        input.keywords.length > 0
+          ? {
+              targeted: input.keywordsMode === "targeted" ? input.keywords : [],
+              blocked: input.keywordsMode === "blocked" ? input.keywords : [],
+            }
+          : undefined,
+      ipRanges:
+        input.ipRanges.length > 0
+          ? {
+              targeted: input.ipRangesMode === "targeted" ? input.ipRanges : [],
+              blocked: input.ipRangesMode === "blocked" ? input.ipRanges : [],
+            }
+          : undefined,
     });
 
     const { error: insertError } = await supabase.from("campaigns").insert({

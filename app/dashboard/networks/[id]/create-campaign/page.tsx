@@ -8,6 +8,10 @@ import {
   getTrafficFactorySessionToken,
   getTrafficFactoryAdvertiserAdTypes,
   getTrafficFactoryCategories,
+  getTrafficFactoryDevices,
+  getTrafficFactoryBrowsers,
+  getTrafficFactoryOperatingSystems,
+  getTrafficFactoryLanguages,
 } from "@/lib/integrations/trafficfactory";
 import { TrafficStarsCreateCampaignForm } from "@/components/dashboard/TrafficStarsCreateCampaignForm";
 import { TrafficFactoryCreateCampaignForm } from "@/components/dashboard/TrafficFactoryCreateCampaignForm";
@@ -68,12 +72,16 @@ export default async function CreateCampaignPage({ params }: { params: Promise<{
   }
 
   if (network.provider === "traffic_factory") {
-    let adTypes, categories;
+    let adTypes, categories, devices, browsers, operatingSystems, languages;
     try {
       const sessionToken = await getTrafficFactorySessionToken(apiKey);
-      [adTypes, categories] = await Promise.all([
+      [adTypes, categories, devices, browsers, operatingSystems, languages] = await Promise.all([
         getTrafficFactoryAdvertiserAdTypes(sessionToken),
         getTrafficFactoryCategories(sessionToken),
+        getTrafficFactoryDevices(sessionToken),
+        getTrafficFactoryBrowsers(sessionToken),
+        getTrafficFactoryOperatingSystems(sessionToken),
+        getTrafficFactoryLanguages(sessionToken),
       ]);
     } catch (err) {
       return (
@@ -97,7 +105,15 @@ export default async function CreateCampaignPage({ params }: { params: Promise<{
           </p>
         </div>
 
-        <TrafficFactoryCreateCampaignForm networkId={network.id} adTypes={adTypes} categories={categories} />
+        <TrafficFactoryCreateCampaignForm
+          networkId={network.id}
+          adTypes={adTypes}
+          categories={categories}
+          devices={devices}
+          browsers={browsers}
+          operatingSystems={operatingSystems}
+          languages={languages}
+        />
       </div>
     );
   }
