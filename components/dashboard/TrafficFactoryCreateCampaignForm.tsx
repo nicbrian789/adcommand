@@ -57,9 +57,13 @@ export function TrafficFactoryCreateCampaignForm({
   timezones: string[];
 }) {
   const router = useRouter();
+  // media_storage_template is required to create a campaign — an ad type with no templates at
+  // all (confirmed from a live 400: Traffic Factory itself rejected one with an empty array)
+  // can never be used here, so it's excluded rather than left selectable and failing later.
+  const usableAdTypes = adTypes.filter((t) => t.mediaStorageTemplates.length > 0);
   const [name, setName] = useState("");
-  const [advertiserAdType, setAdvertiserAdType] = useState<number>(adTypes[0]?.id ?? 0);
-  const selectedAdType = adTypes.find((t) => t.id === advertiserAdType);
+  const [advertiserAdType, setAdvertiserAdType] = useState<number>(usableAdTypes[0]?.id ?? 0);
+  const selectedAdType = usableAdTypes.find((t) => t.id === advertiserAdType);
   const [mediaStorageTemplate, setMediaStorageTemplate] = useState<string>(selectedAdType?.mediaStorageTemplates[0] ?? "");
   const [size, setSize] = useState<string>(selectedAdType?.sizes[0] ?? "");
   const [categoryIds, setCategoryIds] = useState<Set<number>>(new Set());
@@ -102,7 +106,7 @@ export function TrafficFactoryCreateCampaignForm({
 
   function changeAdType(id: number) {
     setAdvertiserAdType(id);
-    const t = adTypes.find((x) => x.id === id);
+    const t = usableAdTypes.find((x) => x.id === id);
     setMediaStorageTemplate(t?.mediaStorageTemplates[0] ?? "");
     setSize(t?.sizes[0] ?? "");
   }
@@ -293,8 +297,8 @@ export function TrafficFactoryCreateCampaignForm({
         <div>
           <label className="block text-xs text-muted mb-1.5">Jenis iklan</label>
           <select value={advertiserAdType} onChange={(e) => changeAdType(Number(e.target.value))} className={inputClass}>
-            {adTypes.length === 0 ? <option value={0}>Tidak ada jenis iklan tersedia</option> : null}
-            {adTypes.map((t) => (
+            {usableAdTypes.length === 0 ? <option value={0}>Tidak ada jenis iklan tersedia</option> : null}
+            {usableAdTypes.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
