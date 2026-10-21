@@ -805,13 +805,39 @@ function dollarsToCents(dollars: number): number {
  * name/price/etc empty when both concerns shared one call — keeping them separate means that can
  * never again blank out the basic fields.
  */
+const DETAIL_SIBLING_KEYS = [
+  "countries",
+  "categories",
+  "devices",
+  "browsers",
+  "operating_systems",
+  "languages",
+  "carriers",
+  "sites",
+  "keywords",
+  "ip_ranges",
+  "day_parting",
+];
+
+/**
+ * Same result-wrapper pattern confirmed for the plain call (GET /campaigns/{id} -> { result:
+ * { campaign: {...} } }) likely applies here too — tries the top level first, then unwraps
+ * `.result` if that's where the sibling targeting collections actually live instead.
+ */
+function unwrapDetailedPayload(detailedPayload: Record<string, unknown>): Record<string, unknown> {
+  if (DETAIL_SIBLING_KEYS.some((k) => k in detailedPayload)) return detailedPayload;
+  const result = asRecord(detailedPayload.result);
+  if (result && DETAIL_SIBLING_KEYS.some((k) => k in result)) return result;
+  return detailedPayload;
+}
+
 function parseCampaignDetail(
   basicRow: Record<string, unknown>,
   detailedPayload: Record<string, unknown>,
   countries: TrafficFactoryCountry[]
 ): TrafficFactoryCampaignDetail {
   const campaign = basicRow;
-  const payload = detailedPayload;
+  const payload = unwrapDetailedPayload(detailedPayload);
   const calculatedStatus = asRecord(campaign.calculated_status);
   const capping = asRecord(campaign.capping);
 
@@ -945,7 +971,17 @@ export async function getTrafficFactoryCampaign(
       `Nggak nemu field id/name di respons GET /campaigns/${campaignId} Traffic Factory. Isi respons: ${JSON.stringify(basicRow).slice(0, 2000)}`
     );
   }
-  return parseCampaignDetail(basicRow, detailedPayload, countries);
+  const detail = parseCampaignDetail(basicRow, detailedPayload, countries);
+  // Countries are required when a campaign is created through this app (validated before the
+  // create call ever goes out), so a campaign coming back with none on Edit almost certainly means
+  // the sibling-collection unwrap guessed wrong again rather than the campaign genuinely having no
+  // targeting. Logged (not thrown) so the page still renders what Edit got right.
+  if (detail.countries.length === 0) {
+    console.error(
+      `getTrafficFactoryCampaign: campaign ${campaignId} came back with 0 countries targeted — sibling-collection unwrap may be wrong. Raw detailed payload: ${JSON.stringify(detailedPayload).slice(0, 2000)}`
+    );
+  }
+  return detail;
 }
 
 async function findTrafficFactoryCampaignByName(

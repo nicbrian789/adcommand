@@ -868,6 +868,30 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.equal(detail.size, "300x100");
   });
 
+  it("also unwraps the detailed call's sibling targeting collections from a .result wrapper, not just the top level", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
+      const detailed = url.searchParams.get("detailed") === "true";
+      if (!detailed) {
+        return jsonResponse({ result: { campaign: { id: 166310, name: "tester5" } } });
+      }
+      // Sibling collections nested under .result instead of at the top level, mirroring the
+      // plain call's confirmed wrapper pattern.
+      return jsonResponse({
+        result: {
+          countries: { elements: [{ country: "IDN" }] },
+          categories: { elements: [1, 2, 3] },
+          devices: { elements: [10] },
+        },
+      });
+    };
+    const detail = await getTrafficFactoryCampaign("session", 166310, fetchFn);
+    assert.deepEqual(detail.countries, ["ID"]);
+    assert.deepEqual(detail.categoryIds, [1, 2, 3]);
+    assert.deepEqual(detail.deviceIds, [10]);
+  });
+
   it("throws a diagnosable error instead of silently rendering a blank form when id/name can't be found anywhere", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
