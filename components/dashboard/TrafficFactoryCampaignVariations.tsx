@@ -8,7 +8,7 @@ import {
   deleteTrafficFactoryVariationAction,
 } from "@/app/dashboard/campaigns/[id]/edit/actions";
 import { FilePreviewThumbnails } from "@/components/dashboard/FilePreviewThumbnails";
-import type { TrafficFactoryVariation } from "@/lib/integrations/trafficfactory";
+import type { TrafficFactoryAdvertiserAdType, TrafficFactoryVariation } from "@/lib/integrations/trafficfactory";
 
 const inputClass =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent";
@@ -74,9 +74,13 @@ function VariationRow({ campaignId, variation }: { campaignId: string; variation
 export function TrafficFactoryCampaignVariations({
   campaignId,
   initialVariations,
+  adType,
+  size,
 }: {
   campaignId: string;
   initialVariations: TrafficFactoryVariation[];
+  adType: TrafficFactoryAdvertiserAdType | null;
+  size: string | null;
 }) {
   const router = useRouter();
   const [showAdd, setShowAdd] = useState(false);
@@ -135,6 +139,17 @@ export function TrafficFactoryCampaignVariations({
               className={inputClass}
             />
           </div>
+          {size || (adType?.aspectRatios.length ?? 0) > 0 ? (
+            <div className="rounded-lg border border-border/60 bg-background px-3 py-2 text-xs text-muted">
+              <p>Ukuran campaign: {size || "-"}</p>
+              {adType && adType.aspectRatios.length > 0 ? (
+                <p className="mt-0.5">
+                  Dimensi gambar yang diterima: {adType.aspectRatios.map((ar) => ar.tag || `${ar.minWidth}-${ar.maxWidth} x ${ar.minHeight}-${ar.maxHeight}px`).join(", ")}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           <div>
             <label className="block text-xs text-muted mb-1.5">
               Gambar — klik lagi buat nambah lebih dari 1, tiap gambar jadi 1 creative terpisah

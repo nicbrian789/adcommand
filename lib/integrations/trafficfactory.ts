@@ -486,20 +486,54 @@ export async function getTrafficFactoryCountryStats(
  *  - delete is a real delete (the campaign is gone), unlike TrafficStars which only has pause.
  */
 
+export type TrafficFactoryAspectRatio = {
+  tag: string;
+  minWidth: number;
+  maxWidth: number;
+  minHeight: number;
+  maxHeight: number;
+};
+
 export type TrafficFactoryAdvertiserAdType = {
   id: number;
   name: string;
   mediaStorageTemplates: string[];
   sizes: string[];
+  aspectRatios: TrafficFactoryAspectRatio[];
 };
+
+function parseAspectRatios(value: unknown): TrafficFactoryAspectRatio[] {
+  if (!Array.isArray(value)) return [];
+  const out: TrafficFactoryAspectRatio[] = [];
+  for (const raw of value) {
+    const row = asRecord(raw);
+    if (!row) continue;
+    const minWidth = pickFirstNumber(row, ["min_width"]);
+    const maxWidth = pickFirstNumber(row, ["max_width"]);
+    const minHeight = pickFirstNumber(row, ["min_height"]);
+    const maxHeight = pickFirstNumber(row, ["max_height"]);
+    if (minWidth === null || maxWidth === null || minHeight === null || maxHeight === null) continue;
+    out.push({
+      tag: pickFirstString(row, ["tag"]) ?? pickFirstString(row, ["aspect_ratio"]) ?? "",
+      minWidth,
+      maxWidth,
+      minHeight,
+      maxHeight,
+    });
+  }
+  return out;
+}
 
 export async function getTrafficFactoryAdvertiserAdTypes(
   sessionToken: string,
   fetchFn: TfFetch = fetch
 ): Promise<TrafficFactoryAdvertiserAdType[]> {
-  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/collections/advertiser-ad-types`, {
-    headers: authHeaders(sessionToken),
-  });
+  const url = new URL(`${TRAFFIC_FACTORY_BASE_URL}/collections/advertiser-ad-types`);
+  // aspect_ratios (real accepted image-dimension ranges, confirmed from a live 400: "Asset does
+  // not meet the required dimensions or aspect ratio") isn't in the response without this —
+  // it's absent from the schema's required-fields list, unlike size/media_storage_templates.
+  url.searchParams.set("show_details", "true");
+  const res = await fetchFn(url, { headers: authHeaders(sessionToken) });
   const text = await res.text();
   if (!res.ok) {
     throwTrafficFactoryHttpError("/collections/advertiser-ad-types", res.status, text);
@@ -520,7 +554,7 @@ export async function getTrafficFactoryAdvertiserAdTypes(
         ? (row.media_storage_templates as unknown[]).filter((t): t is string => typeof t === "string")
         : [];
       const sizes = Array.isArray(row.size) ? (row.size as unknown[]).filter((s): s is string => typeof s === "string") : [];
-      return { id, name, mediaStorageTemplates: templates, sizes };
+      return { id, name, mediaStorageTemplates: templates, sizes, aspectRatios: parseAspectRatios(row.aspect_ratios) };
     })
     .filter((x): x is TrafficFactoryAdvertiserAdType => x !== null);
 }
@@ -679,6 +713,7 @@ export type TrafficFactoryCampaignDetail = {
   totalBudgetLimit: number | null;
   advertiserAdType: number | null;
   mediaStorageTemplate: string | null;
+  size: string | null;
   startDate: string | null;
   endDate: string | null;
   totalImpressions: number | null;
@@ -750,6 +785,7 @@ function parseCampaignDetail(payload: Record<string, unknown>, countries: Traffi
     totalBudgetLimit: centsToDollars(pickFirstNumber(campaign, ["total_budget_limit"])),
     advertiserAdType: pickFirstNumber(campaign, ["advertiser_ad_type"]),
     mediaStorageTemplate: pickFirstString(campaign, ["media_storage_template"]),
+    size: pickFirstString(campaign, ["size"]),
     startDate: pickFirstString(campaign, ["start_date"]),
     endDate: pickFirstString(campaign, ["end_date"]),
     totalImpressions: pickFirstNumber(campaign, ["total_impressions"]),

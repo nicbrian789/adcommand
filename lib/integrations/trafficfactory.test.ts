@@ -313,18 +313,37 @@ describe("Traffic Factory country breakdown (/statistics/a/country)", () => {
 });
 
 describe("Traffic Factory campaign create/edit/pause/delete", () => {
-  it("fetches advertiser ad type presets with their media storage templates", async () => {
+  it("fetches advertiser ad type presets with show_details=true, including aspect_ratios (needed for real image dimension limits)", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
       assert.match(url.pathname, /\/collections\/advertiser-ad-types$/);
+      assert.equal(url.searchParams.get("show_details"), "true");
       return jsonResponse({
-        result: [{ id: 5, name: "Popunder", media_storage_templates: ["popunder"], size: ["Fullscreen"] }],
+        result: [
+          {
+            id: 5,
+            name: "img_banner",
+            media_storage_templates: ["img_banner"],
+            size: ["300x250"],
+            aspect_ratios: [
+              { id: 1, aspect_ratio: "1.2:1", tag: "300x250 (+/- 10%)", flexibility: 10, min_width: 270, max_width: 330, min_height: 225, max_height: 275 },
+            ],
+          },
+        ],
       });
     };
     const types = await getTrafficFactoryAdvertiserAdTypes("session", fetchFn);
     assert.equal(types.length, 1);
     assert.equal(types[0].id, 5);
-    assert.deepEqual(types[0].mediaStorageTemplates, ["popunder"]);
+    assert.deepEqual(types[0].mediaStorageTemplates, ["img_banner"]);
+    assert.deepEqual(types[0].aspectRatios, [{ tag: "300x250 (+/- 10%)", minWidth: 270, maxWidth: 330, minHeight: 225, maxHeight: 275 }]);
+  });
+
+  it("returns an empty aspectRatios array when the ad type has none (not crashing on a missing field)", async () => {
+    const fetchFn: TfFetch = async () =>
+      jsonResponse({ result: [{ id: 1, name: "Popunder", media_storage_templates: ["popunder"], size: ["Fullscreen"] }] });
+    const types = await getTrafficFactoryAdvertiserAdTypes("session", fetchFn);
+    assert.deepEqual(types[0].aspectRatios, []);
   });
 
   it("fetches categories and drops non-selectable ones", async () => {

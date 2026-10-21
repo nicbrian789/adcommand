@@ -15,6 +15,7 @@ import {
   getTrafficFactoryLanguages,
   getTrafficFactoryCarriers,
   getTrafficFactoryTimezones,
+  getTrafficFactoryAdvertiserAdTypes,
 } from "@/lib/integrations/trafficfactory";
 import { TrafficStarsEditCampaignForm } from "@/components/dashboard/TrafficStarsEditCampaignForm";
 import { TrafficStarsCampaignBanners } from "@/components/dashboard/TrafficStarsCampaignBanners";
@@ -87,9 +88,10 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
     let languages;
     let carriers;
     let timezones;
+    let adTypes;
     try {
       const sessionToken = await getTrafficFactorySessionToken(apiKey);
-      [detail, variations, categories, devices, browsers, operatingSystems, languages, carriers, timezones] = await Promise.all([
+      [detail, variations, categories, devices, browsers, operatingSystems, languages, carriers, timezones, adTypes] = await Promise.all([
         getTrafficFactoryCampaign(sessionToken, Number(campaign.external_id)),
         listTrafficFactoryVariations(sessionToken, Number(campaign.external_id)),
         getTrafficFactoryCategories(sessionToken),
@@ -99,6 +101,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
         getTrafficFactoryLanguages(sessionToken),
         getTrafficFactoryCarriers(sessionToken),
         getTrafficFactoryTimezones(sessionToken),
+        getTrafficFactoryAdvertiserAdTypes(sessionToken),
       ]);
     } catch (err) {
       return (
@@ -134,7 +137,12 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             carriers={carriers}
             timezones={timezones}
           />
-          <TrafficFactoryCampaignVariations campaignId={campaign.id} initialVariations={variations} />
+          <TrafficFactoryCampaignVariations
+            campaignId={campaign.id}
+            initialVariations={variations}
+            adType={adTypes.find((t) => t.id === detail.advertiserAdType) ?? null}
+            size={detail.size}
+          />
         </div>
       </div>
     );

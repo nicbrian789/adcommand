@@ -215,6 +215,17 @@ export function TrafficFactoryCreateCampaignForm({
             />
           </div>
 
+          {size || (selectedAdType?.aspectRatios.length ?? 0) > 0 ? (
+            <div className="rounded-lg border border-border/60 bg-surface-2/40 px-3 py-2 text-xs text-muted">
+              <p>Ukuran dipilih: {size || "-"}</p>
+              {selectedAdType!.aspectRatios.length > 0 ? (
+                <p className="mt-0.5">
+                  Dimensi gambar yang diterima: {selectedAdType!.aspectRatios.map((ar) => ar.tag || `${ar.minWidth}-${ar.maxWidth} x ${ar.minHeight}-${ar.maxHeight}px`).join(", ")}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           <div>
             <label className="block text-xs text-muted mb-1.5">
               Gambar — klik lagi buat nambah lebih dari 1, tiap gambar jadi 1 creative terpisah
