@@ -111,6 +111,31 @@ function pickFirstNumberOrObjectId(row: Record<string, unknown>, keys: readonly 
   return null;
 }
 
+/**
+ * Generic version of the { result: {...} } / { result: [{...}] } unwrap confirmed on
+ * GET /campaigns/{id}. Applied here to the POST /library/file and /library/url responses too —
+ * both were written to expect the created object directly at the top level, before that wrapper
+ * pattern was confirmed to exist on this API, so they're likely wrong in the same way.
+ */
+function unwrapSingleResultObject(
+  data: unknown,
+  looksRight: (r: Record<string, unknown>) => boolean
+): Record<string, unknown> | null {
+  const root = asRecord(data);
+  if (!root) return null;
+  if (looksRight(root)) return root;
+  for (const key of ["result", "data"]) {
+    const value = root[key];
+    const nested = asRecord(value);
+    if (nested && looksRight(nested)) return nested;
+    if (Array.isArray(value) && value.length > 0) {
+      const first = asRecord(value[0]);
+      if (first && looksRight(first)) return first;
+    }
+  }
+  return null;
+}
+
 /** Unwrap common list envelopes used by TF-style JSON APIs (campaigns, etc.). */
 export function unwrapList(data: unknown): Record<string, unknown>[] {
   if (Array.isArray(data)) {
@@ -1284,10 +1309,10 @@ export async function uploadTrafficFactoryLibraryFile(
   } catch {
     throw new Error(`Respons /library/file Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
   }
-  const row = asRecord(data);
+  const row = unwrapSingleResultObject(data, (r) => "id" in r);
   const id = row ? pickFirstNumber(row, ["id"]) : null;
   if (!row || id === null) {
-    throw new Error(`Respons /library/file Traffic Factory tidak terduga: ${text.slice(0, 300)}`);
+    throw new Error(`Respons /library/file Traffic Factory tidak terduga: ${text.slice(0, 500)}`);
   }
   return { id, type: pickFirstString(row, ["type"]) ?? "image", url: pickFirstString(row, ["url"]) ?? "" };
 }
@@ -1319,10 +1344,10 @@ export async function uploadTrafficFactoryLibraryUrl(
   } catch {
     throw new Error(`Respons /library/url Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
   }
-  const row = asRecord(data);
+  const row = unwrapSingleResultObject(data, (r) => "id" in r);
   const id = row ? pickFirstNumber(row, ["id"]) : null;
   if (!row || id === null) {
-    throw new Error(`Respons /library/url Traffic Factory tidak terduga: ${text.slice(0, 300)}`);
+    throw new Error(`Respons /library/url Traffic Factory tidak terduga: ${text.slice(0, 500)}`);
   }
   return { id, url: pickFirstString(row, ["url"]) ?? url };
 }

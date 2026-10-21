@@ -942,6 +942,20 @@ describe("Traffic Factory creative upload (Library -> Variation, two separate ca
     assert.equal(result.url, "https://cdn.example/99.png");
   });
 
+  it("unwraps a .result-wrapped /library/file response too, same pattern confirmed on GET /campaigns/{id}", async () => {
+    const fetchFn: TfFetch = async () =>
+      jsonResponse({ result: { id: 99, type: "image", url: "https://cdn.example/99.png" } });
+    const file = new File(["fake-bytes"], "banner.png", { type: "image/png" });
+    const result = await uploadTrafficFactoryLibraryFile("session", file, {}, fetchFn);
+    assert.equal(result.id, 99);
+  });
+
+  it("unwraps a .result-wrapped /library/url response too", async () => {
+    const fetchFn: TfFetch = async () => jsonResponse({ result: { id: 7, url: "https://example.com/offer", status: 1 } });
+    const result = await uploadTrafficFactoryLibraryUrl("session", "https://example.com/offer", fetchFn);
+    assert.equal(result.id, 7);
+  });
+
   it("creates a variation referencing the uploaded Library file AND Library url ids, never a raw file or durl string", async () => {
     // Confirmed from a live 400 ("Parameter durl not allowed in img_banner") that at least some
     // media storage templates reject a raw durl string — the landing URL must go through
