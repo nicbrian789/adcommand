@@ -799,6 +799,33 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.equal(detail.price, 0.5);
   });
 
+  it("unwraps the plain call's campaign object from a result/data wrapper when it isn't at the top level", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
+      const detailed = url.searchParams.get("detailed") === "true";
+      if (!detailed) {
+        // Wrapped like the list endpoints, not flat at the top level.
+        return jsonResponse({ result: { id: 123, name: "Wrapped Name", status: 1, price: 50 } });
+      }
+      return jsonResponse({ countries: { elements: [] } });
+    };
+    const detail = await getTrafficFactoryCampaign("session", 123, fetchFn);
+    assert.equal(detail.name, "Wrapped Name");
+    assert.equal(detail.id, 123);
+  });
+
+  it("throws a diagnosable error instead of silently rendering a blank form when id/name can't be found anywhere", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
+      const detailed = url.searchParams.get("detailed") === "true";
+      if (!detailed) return jsonResponse({ some_unexpected_field: "mystery shape" });
+      return jsonResponse({ countries: { elements: [] } });
+    };
+    await assert.rejects(() => getTrafficFactoryCampaign("session", 123, fetchFn), /Nggak nemu field id\/name/);
+  });
+
   it("sends campaign_ids for play/pause and surfaces partial errors from the bulk response", async () => {
     const fetchFn: TfFetch = async (input, init) => {
       const url = new URL(String(input));

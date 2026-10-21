@@ -849,6 +849,24 @@ function parseCampaignDetail(
   };
 }
 
+/**
+ * Tries the raw object first, then common single-resource wrapper keys ("result"/"data"/
+ * "campaign") — never verified directly which (if any) GET /campaigns/{id} actually uses, so this
+ * picks whichever candidate actually looks like a campaign (has both id and name) rather than
+ * assuming one shape.
+ */
+function unwrapSingleCampaignObject(data: unknown): Record<string, unknown> | null {
+  const root = asRecord(data);
+  if (!root) return null;
+  const looksLikeCampaign = (r: Record<string, unknown>) => "id" in r && "name" in r;
+  if (looksLikeCampaign(root)) return root;
+  for (const key of ["result", "data", "campaign"]) {
+    const nested = asRecord(root[key]);
+    if (nested && looksLikeCampaign(nested)) return nested;
+  }
+  return root;
+}
+
 async function fetchCampaignRaw(
   sessionToken: string,
   campaignId: number,
@@ -868,7 +886,7 @@ async function fetchCampaignRaw(
   } catch {
     throw new Error(`Respons /campaigns/${campaignId} Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
   }
-  const row = asRecord(data);
+  const row = unwrapSingleCampaignObject(data);
   if (!row) throw new Error(`Respons /campaigns/${campaignId} Traffic Factory tidak terduga: ${text.slice(0, 300)}`);
   return row;
 }
@@ -883,6 +901,13 @@ export async function getTrafficFactoryCampaign(
     fetchCampaignRaw(sessionToken, campaignId, fetchFn, true),
     getTrafficFactoryCountries(sessionToken, fetchFn),
   ]);
+  // If id/name still can't be found after unwrapping, don't silently render a blank form again —
+  // surface the raw response so the next failure gives a definitive answer instead of another guess.
+  if (!("id" in basicRow) || !("name" in basicRow)) {
+    throw new Error(
+      `Nggak nemu field id/name di respons GET /campaigns/${campaignId} Traffic Factory. Field yang ada: ${Object.keys(basicRow).join(", ")}`
+    );
+  }
   return parseCampaignDetail(basicRow, detailedPayload, countries);
 }
 
