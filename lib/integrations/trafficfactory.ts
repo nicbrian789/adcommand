@@ -966,6 +966,22 @@ function unwrapSingleCampaignObject(data: unknown): Record<string, unknown> | nu
   return root;
 }
 
+/**
+ * Shallow envelope unwrap for the detailed (?detailed=true) call ONLY — unlike
+ * unwrapSingleCampaignObject, this never digs into a nested `.campaign` key. Confirmed live: the
+ * detailed call's real shape is `{ result: { campaign: {...flat...}, countries: {...},
+ * categories: {...}, ... } }` — campaign and the sibling targeting collections are SIBLINGS inside
+ * `result`, not one inside the other. Reusing unwrapSingleCampaignObject here was digging straight
+ * to `result.campaign` (since it has id/name and matches first), silently discarding every sibling
+ * collection — which is why Edit kept showing 0 countries/categories despite the parsing code for
+ * those collections looking correct in isolation; they just never received their real payload.
+ */
+function unwrapResultEnvelope(data: unknown): Record<string, unknown> | null {
+  const root = asRecord(data);
+  if (!root) return null;
+  return asRecord(root.result) ?? root;
+}
+
 async function fetchCampaignRaw(
   sessionToken: string,
   campaignId: number,
@@ -985,7 +1001,7 @@ async function fetchCampaignRaw(
   } catch {
     throw new Error(`Respons /campaigns/${campaignId} Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
   }
-  const row = unwrapSingleCampaignObject(data);
+  const row = detailed ? unwrapResultEnvelope(data) : unwrapSingleCampaignObject(data);
   if (!row) throw new Error(`Respons /campaigns/${campaignId} Traffic Factory tidak terduga: ${text.slice(0, 300)}`);
   return row;
 }

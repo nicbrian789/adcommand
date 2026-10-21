@@ -924,6 +924,36 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.deepEqual(detail.deviceIds, [10]);
   });
 
+  it("doesn't discard sibling targeting collections when the detailed call nests `campaign` alongside them under .result (the actual confirmed live shape)", async () => {
+    // Confirmed live from campaign 166310: the detailed call's real shape is
+    // { result: { campaign: {...flat...}, countries: {...}, categories: {...}, devices: {...} } } —
+    // campaign and the siblings live at the SAME level inside result, not one inside the other.
+    // Reusing unwrapSingleCampaignObject (built for the plain call) here was digging straight into
+    // result.campaign because it has id/name and matches first, silently dropping every sibling
+    // collection — Edit showed 0 countries/categories for every campaign with this exact shape.
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
+      const detailed = url.searchParams.get("detailed") === "true";
+      if (!detailed) {
+        return jsonResponse({ result: { campaign: { id: 166310, name: "tester5", status: 1, price: 1 } } });
+      }
+      return jsonResponse({
+        result: {
+          campaign: { id: 166310, name: "tester5", status: 1, price: 1 },
+          countries: { elements: [{ country: "IDN" }] },
+          categories: { elements: [5] },
+          devices: { elements: [10] },
+        },
+      });
+    };
+    const detail = await getTrafficFactoryCampaign("session", 166310, fetchFn);
+    assert.equal(detail.name, "tester5");
+    assert.deepEqual(detail.countries, ["ID"]);
+    assert.deepEqual(detail.categoryIds, [5]);
+    assert.deepEqual(detail.deviceIds, [10]);
+  });
+
   it("throws a diagnosable error instead of silently rendering a blank form when id/name can't be found anywhere", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
