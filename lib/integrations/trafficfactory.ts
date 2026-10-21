@@ -1380,7 +1380,10 @@ function parseVariation(row: Record<string, unknown>): TrafficFactoryVariation {
     name: pickFirstString(row, ["name"]),
     active: Number(row.active) === 1,
     imageUrl: pickFirstString(row, ["imgurl"]),
-    landingUrl: pickFirstString(row, ["durl"]),
+    // A variation created via id_library_url (not the rejected raw durl) may echo the resolved
+    // landing URL back under a different key than "durl" — click_url/url are the other URL-ish
+    // fields VariationDetails documents, tried here as fallbacks rather than assumed absent.
+    landingUrl: pickFirstString(row, ["durl", "click_url", "url"]),
     statusLabel: calculatedStatus ? pickFirstString(calculatedStatus, ["status"]) : pickFirstString(row, ["status"]),
   };
 }
@@ -1445,6 +1448,38 @@ export async function deleteTrafficFactoryVariation(
   const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}/variation/${variationId}`, {
     method: "DELETE",
     headers: authHeaders(sessionToken),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throwTrafficFactoryHttpError(`/campaigns/${campaignId}/variation/${variationId}`, res.status, text);
+  }
+}
+
+export type UpdateTrafficFactoryVariationInput = {
+  idLibraryUrl?: number;
+  name?: string;
+  brand?: string;
+};
+
+/** PUT .../variation/{id} — JSON body, unlike the multipart POST that creates one. Confirmed from
+ * the live swagger.json that it has no id_library_file field at all, so the image can't be
+ * replaced through this endpoint — only the landing URL (via id_library_url) and name/brand. */
+export async function updateTrafficFactoryVariation(
+  sessionToken: string,
+  campaignId: number,
+  variationId: number,
+  input: UpdateTrafficFactoryVariationInput,
+  fetchFn: TfFetch = fetch
+): Promise<void> {
+  const body: Record<string, unknown> = {};
+  if (input.idLibraryUrl !== undefined) body.id_library_url = input.idLibraryUrl;
+  if (input.name !== undefined) body.name = input.name;
+  if (input.brand !== undefined) body.brand = input.brand;
+
+  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}/variation/${variationId}`, {
+    method: "PUT",
+    headers: { ...authHeaders(sessionToken), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const text = await res.text();

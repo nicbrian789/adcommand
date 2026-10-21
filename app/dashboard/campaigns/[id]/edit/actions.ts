@@ -20,6 +20,7 @@ import {
   uploadTrafficFactoryLibraryUrl,
   createTrafficFactoryVariation,
   deleteTrafficFactoryVariation,
+  updateTrafficFactoryVariation,
   type TrafficFactoryVariation,
 } from "@/lib/integrations/trafficfactory";
 
@@ -275,6 +276,30 @@ export async function deleteTrafficFactoryVariationAction(campaignId: string, va
   } catch (err) {
     console.error("deleteTrafficFactoryVariationAction error:", err);
     const message = err instanceof Error ? err.message : "Gagal hapus creative.";
+    throw new Error(message);
+  }
+}
+
+export async function updateTrafficFactoryVariationAction(
+  campaignId: string,
+  variationId: number,
+  input: { durl: string; name: string; brand: string }
+): Promise<void> {
+  try {
+    if (!input.durl.trim() || !/^https?:\/\//i.test(input.durl.trim())) {
+      throw new Error("Landing URL wajib diisi, diawali http:// atau https://");
+    }
+    const { sessionToken, externalId } = await resolveTrafficFactoryCampaign(campaignId);
+    const libraryUrl = await uploadTrafficFactoryLibraryUrl(sessionToken, input.durl.trim());
+    await updateTrafficFactoryVariation(sessionToken, externalId, variationId, {
+      idLibraryUrl: libraryUrl.id,
+      name: input.name.trim() || undefined,
+      brand: input.brand.trim() || undefined,
+    });
+    revalidatePath(`/dashboard/campaigns/${campaignId}/edit`);
+  } catch (err) {
+    console.error("updateTrafficFactoryVariationAction error:", err);
+    const message = err instanceof Error ? err.message : "Gagal update creative.";
     throw new Error(message);
   }
 }

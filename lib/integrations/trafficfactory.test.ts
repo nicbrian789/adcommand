@@ -33,6 +33,7 @@ import {
   setTrafficFactoryCampaignsRunState,
   unwrapTrafficFactoryStatisticsPayload,
   updateTrafficFactoryCampaign,
+  updateTrafficFactoryVariation,
   uploadTrafficFactoryLibraryFile,
   uploadTrafficFactoryLibraryUrl,
   TF_BALANCE_KEYS,
@@ -1029,6 +1030,49 @@ describe("Traffic Factory creative upload (Library -> Variation, two separate ca
     assert.equal(variations[0].active, true);
     assert.equal(variations[0].imageUrl, "https://cdn.example/7.png");
     assert.equal(variations[0].statusLabel, "Pending");
+  });
+
+  it("reads landingUrl from click_url or url when durl is absent, since a variation created via id_library_url doesn't echo durl back", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/campaigns\/42\/variation$/);
+      return jsonResponse({
+        variations: [
+          {
+            idvariation: 7,
+            name: "No durl, has click_url",
+            active: 1,
+            click_url: "https://example.com/from-click-url",
+          },
+          {
+            idvariation: 8,
+            name: "No durl, has url",
+            active: 1,
+            url: "https://example.com/from-url",
+          },
+        ],
+      });
+    };
+    const variations = await listTrafficFactoryVariations("session", 42, fetchFn);
+    assert.equal(variations[0].landingUrl, "https://example.com/from-click-url");
+    assert.equal(variations[1].landingUrl, "https://example.com/from-url");
+  });
+
+  it("updates a variation's landing URL/name/brand via PUT with a JSON body, never id_library_file (the schema has none)", async () => {
+    const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/campaigns\/42\/variation\/7$/);
+      assert.equal(init?.method, "PUT");
+      assert.deepEqual(JSON.parse(String(init?.body)), { id_library_url: 7, name: "New name", brand: "New brand" });
+      return new Response("", { status: 200 });
+    };
+    await updateTrafficFactoryVariation(
+      "session",
+      42,
+      7,
+      { idLibraryUrl: 7, name: "New name", brand: "New brand" },
+      fetchFn
+    );
   });
 
   it("deletes (archives) a variation via DELETE /campaigns/{id}/variation/{id}", async () => {

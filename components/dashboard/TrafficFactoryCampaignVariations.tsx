@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Trash2, Upload, PlusCircle, ImageOff } from "lucide-react";
+import { Loader2, Trash2, Upload, PlusCircle, ImageOff, Pencil, Check, X } from "lucide-react";
 import {
   addTrafficFactoryVariationAction,
   deleteTrafficFactoryVariationAction,
+  updateTrafficFactoryVariationAction,
 } from "@/app/dashboard/campaigns/[id]/edit/actions";
 import { FilePreviewThumbnails } from "@/components/dashboard/FilePreviewThumbnails";
 import type { TrafficFactoryAdvertiserAdType, TrafficFactoryVariation } from "@/lib/integrations/trafficfactory";
@@ -18,6 +19,10 @@ function VariationRow({ campaignId, variation }: { campaignId: string; variation
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imageFailed, setImageFailed] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editDurl, setEditDurl] = useState(variation.landingUrl ?? "");
+  const [editName, setEditName] = useState(variation.name ?? "");
 
   async function handleDelete() {
     if (!confirm("Hapus creative ini dari campaign?")) return;
@@ -30,6 +35,74 @@ function VariationRow({ campaignId, variation }: { campaignId: string; variation
       setError(err instanceof Error ? err.message : "Gagal hapus creative.");
       setDeleting(false);
     }
+  }
+
+  function openEdit() {
+    setEditDurl(variation.landingUrl ?? "");
+    setEditName(variation.name ?? "");
+    setError(null);
+    setEditing(true);
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      await updateTrafficFactoryVariationAction(campaignId, variation.id, {
+        durl: editDurl,
+        name: editName,
+        brand: "",
+      });
+      setEditing(false);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal update creative.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <form onSubmit={handleSave} className="rounded-lg border border-border/60 p-3 space-y-2 bg-surface-2/40">
+        <div>
+          <label className="block text-xs text-muted mb-1">Landing URL</label>
+          <input
+            type="text"
+            required
+            value={editDurl}
+            onChange={(e) => setEditDurl(e.target.value)}
+            placeholder="https://domain-kamu.com/offer"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-muted mb-1">Nama (opsional)</label>
+          <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className={inputClass} />
+        </div>
+        {error ? <p className="text-xs text-danger whitespace-pre-wrap">{error}</p> : null}
+        <div className="flex items-center gap-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded-lg bg-accent text-white text-xs font-medium px-3 py-1.5 hover:bg-accent/90 disabled:opacity-60"
+          >
+            {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+            Simpan
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded-lg border border-border text-xs font-medium px-3 py-1.5 text-muted hover:text-foreground disabled:opacity-60"
+          >
+            <X size={12} />
+            Batal
+          </button>
+        </div>
+      </form>
+    );
   }
 
   return (
@@ -59,6 +132,13 @@ function VariationRow({ campaignId, variation }: { campaignId: string; variation
         {variation.statusLabel ? <p className="text-muted">{variation.statusLabel}</p> : null}
         {error ? <p className="text-danger">{error}</p> : null}
       </div>
+      <button
+        onClick={openEdit}
+        title="Edit creative"
+        className="text-muted hover:text-accent shrink-0"
+      >
+        <Pencil size={14} />
+      </button>
       <button
         onClick={handleDelete}
         disabled={deleting}
