@@ -815,6 +815,25 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.equal(detail.id, 123);
   });
 
+  it("unwraps a single campaign from a one-item result array (confirmed live shape: GET /campaigns/{id} reuses the list envelope)", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
+      const detailed = url.searchParams.get("detailed") === "true";
+      if (!detailed) {
+        return jsonResponse({
+          result: [{ id: 166310, name: "tester5", status: 0, price: 10, pricing_model: 2 }],
+          request_metadata: { limit: 50, offset: 0, count: 1 },
+        });
+      }
+      return jsonResponse({ countries: { elements: [] } });
+    };
+    const detail = await getTrafficFactoryCampaign("session", 166310, fetchFn);
+    assert.equal(detail.id, 166310);
+    assert.equal(detail.name, "tester5");
+    assert.equal(detail.status, 0);
+  });
+
   it("throws a diagnosable error instead of silently rendering a blank form when id/name can't be found anywhere", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));

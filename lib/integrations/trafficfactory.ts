@@ -861,8 +861,16 @@ function unwrapSingleCampaignObject(data: unknown): Record<string, unknown> | nu
   const looksLikeCampaign = (r: Record<string, unknown>) => "id" in r && "name" in r;
   if (looksLikeCampaign(root)) return root;
   for (const key of ["result", "data", "campaign"]) {
-    const nested = asRecord(root[key]);
+    const value = root[key];
+    const nested = asRecord(value);
     if (nested && looksLikeCampaign(nested)) return nested;
+    // Confirmed from a live response ("Field yang ada: result, request_metadata"): GET
+    // /campaigns/{id} reuses the same { result: [...], request_metadata } envelope as the list
+    // endpoint GET /campaigns, so a single campaign still comes back as a one-item array.
+    if (Array.isArray(value) && value.length > 0) {
+      const first = asRecord(value[0]);
+      if (first && looksLikeCampaign(first)) return first;
+    }
   }
   return root;
 }
