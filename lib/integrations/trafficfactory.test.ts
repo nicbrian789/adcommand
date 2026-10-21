@@ -956,6 +956,24 @@ describe("Traffic Factory creative upload (Library -> Variation, two separate ca
     assert.equal(result.id, 7);
   });
 
+  it("unwraps /library/url's actual confirmed shape: a bare array at the top level, no wrapper at all", async () => {
+    const fetchFn: TfFetch = async () =>
+      jsonResponse([
+        {
+          id: 79504,
+          created_at: "2026-10-21 04:42:57",
+          updated_at: "",
+          last_used_at: "2026-10-21 04:42:57",
+          is_adult: 0,
+          url: "https://partner-resmi-rbtv.pages.dev/",
+          status: 1,
+        },
+      ]);
+    const result = await uploadTrafficFactoryLibraryUrl("session", "https://partner-resmi-rbtv.pages.dev/", fetchFn);
+    assert.equal(result.id, 79504);
+    assert.equal(result.url, "https://partner-resmi-rbtv.pages.dev/");
+  });
+
   it("creates a variation referencing the uploaded Library file AND Library url ids, never a raw file or durl string", async () => {
     // Confirmed from a live 400 ("Parameter durl not allowed in img_banner") that at least some
     // media storage templates reject a raw durl string — the landing URL must go through

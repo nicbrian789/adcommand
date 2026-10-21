@@ -121,6 +121,12 @@ function unwrapSingleResultObject(
   data: unknown,
   looksRight: (r: Record<string, unknown>) => boolean
 ): Record<string, unknown> | null {
+  // Confirmed live: POST /library/url returns a bare array ([{...}]) at the very top level, no
+  // wrapper object at all — different again from /campaigns/{id}'s { result: {...} } wrapper.
+  if (Array.isArray(data) && data.length > 0) {
+    const first = asRecord(data[0]);
+    if (first && looksRight(first)) return first;
+  }
   const root = asRecord(data);
   if (!root) return null;
   if (looksRight(root)) return root;
@@ -934,9 +940,15 @@ function parseCampaignDetail(
  * shape differs again on another account or a future API change.
  */
 function unwrapSingleCampaignObject(data: unknown): Record<string, unknown> | null {
+  const looksLikeCampaign = (r: Record<string, unknown>) => "id" in r && "name" in r;
+  // Confirmed elsewhere on this same API (POST /library/url): a bare array at the very top level,
+  // no wrapper object, is a real shape this API uses — checked here too as a safety net.
+  if (Array.isArray(data) && data.length > 0) {
+    const first = asRecord(data[0]);
+    if (first && looksLikeCampaign(first)) return first;
+  }
   const root = asRecord(data);
   if (!root) return null;
-  const looksLikeCampaign = (r: Record<string, unknown>) => "id" in r && "name" in r;
   if (looksLikeCampaign(root)) return root;
   for (const key of ["result", "data", "campaign"]) {
     const value = root[key];
