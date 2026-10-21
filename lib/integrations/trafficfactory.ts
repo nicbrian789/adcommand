@@ -1115,12 +1115,32 @@ type ExtendedTargetingInput = {
   dayParting?: { timezone: string; parting: TrafficFactoryDayPartEntry[] };
 };
 
+function hasMultiStringEntries(v: TrafficFactoryMultiStringList): boolean {
+  return v.targeted.length > 0 || v.blocked.length > 0;
+}
+
 function applyExtendedTargetingBody(body: Record<string, unknown>, input: ExtendedTargetingInput): void {
-  if (input.deviceIds !== undefined) body.devices = { type: "targeted", elements: input.deviceIds };
-  if (input.browserIds !== undefined) body.browsers = { type: "targeted", elements: input.browserIds };
-  if (input.osIds !== undefined) body.operating_systems = { type: "targeted", elements: input.osIds };
-  if (input.languageIds !== undefined) body.languages = { type: "targeted", elements: input.languageIds };
-  if (input.carrierIds !== undefined) body.carriers = { type: "targeted", elements: input.carrierIds };
+  // Confirmed live (400): "Carriers dimension is not available for the user." / "Sites dimension
+  // is not available for the user." / "Ip Ranges dimension is not available for the user." — this
+  // account's TF plan rejects these fields outright just for being present in the body, even
+  // explicitly empty. Only including a dimension when the caller actually has something to put in
+  // it avoids tripping an unavailable-for-this-account dimension on every save; applied to every
+  // optional targeting collection here for consistency, not just the three confirmed live.
+  if (input.deviceIds !== undefined && input.deviceIds.length > 0) {
+    body.devices = { type: "targeted", elements: input.deviceIds };
+  }
+  if (input.browserIds !== undefined && input.browserIds.length > 0) {
+    body.browsers = { type: "targeted", elements: input.browserIds };
+  }
+  if (input.osIds !== undefined && input.osIds.length > 0) {
+    body.operating_systems = { type: "targeted", elements: input.osIds };
+  }
+  if (input.languageIds !== undefined && input.languageIds.length > 0) {
+    body.languages = { type: "targeted", elements: input.languageIds };
+  }
+  if (input.carrierIds !== undefined && input.carrierIds.length > 0) {
+    body.carriers = { type: "targeted", elements: input.carrierIds };
+  }
   if (input.dayParting !== undefined) body.day_parting = input.dayParting;
   if (input.startDate !== undefined) body.start_date = input.startDate;
   if (input.endDate !== undefined) body.end_date = input.endDate;
@@ -1138,9 +1158,9 @@ function applyExtendedTargetingBody(body: Record<string, unknown>, input: Extend
       minutes: input.frequencyCapping.minutes,
     };
   }
-  if (input.sites !== undefined) body.sites = input.sites;
-  if (input.keywords !== undefined) body.keywords = input.keywords;
-  if (input.ipRanges !== undefined) body.ip_ranges = input.ipRanges;
+  if (input.sites !== undefined && hasMultiStringEntries(input.sites)) body.sites = input.sites;
+  if (input.keywords !== undefined && hasMultiStringEntries(input.keywords)) body.keywords = input.keywords;
+  if (input.ipRanges !== undefined && hasMultiStringEntries(input.ipRanges)) body.ip_ranges = input.ipRanges;
 }
 
 export type CreateTrafficFactoryCampaignInput = ExtendedTargetingInput & {

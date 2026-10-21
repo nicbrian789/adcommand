@@ -743,6 +743,36 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.deepEqual(capturedBody, { name: "New Name" });
   });
 
+  it("omits devices/browsers/os/languages/carriers/sites/keywords/ip_ranges from the update body when given empty, instead of a dimension the account may not have access to", async () => {
+    // Confirmed live (400): "Carriers dimension is not available for the user." / "Sites dimension
+    // is not available for the user." / "Ip Ranges dimension is not available for the user." — this
+    // account's plan rejects the field just for being present, even explicitly empty. The edit form
+    // always sends every targeting collection, most commonly empty (nothing picked), so every
+    // optional collection here needs the same "omit when empty" treatment, not just the 3 confirmed.
+    let capturedBody: Record<string, unknown> | undefined;
+    const fetchFn: TfFetch = async (input, init) => {
+      capturedBody = JSON.parse(String(init?.body));
+      return new Response("", { status: 200 });
+    };
+    await updateTrafficFactoryCampaign(
+      "session",
+      123,
+      {
+        name: "New Name",
+        deviceIds: [],
+        browserIds: [],
+        osIds: [],
+        languageIds: [],
+        carrierIds: [],
+        sites: { targeted: [], blocked: [] },
+        keywords: { targeted: [], blocked: [] },
+        ipRanges: { targeted: [], blocked: [] },
+      },
+      fetchFn
+    );
+    assert.deepEqual(capturedBody, { name: "New Name" });
+  });
+
   it("parses flat campaign fields from the plain call and sibling collections from the detailed call, converting cents to dollars", async () => {
     // Detailed-call collection shapes below are the actual confirmed live shape (campaign 166310):
     // {targeted: [...full objects...], blocked: [...]} per collection — NOT the {type, elements:
