@@ -910,10 +910,11 @@ export async function getTrafficFactoryCampaign(
     getTrafficFactoryCountries(sessionToken, fetchFn),
   ]);
   // If id/name still can't be found after unwrapping, don't silently render a blank form again —
-  // surface the raw response so the next failure gives a definitive answer instead of another guess.
+  // surface the raw response (not just key names, which weren't enough to diagnose this once
+  // already) so the next failure gives a definitive answer instead of another guess.
   if (!("id" in basicRow) || !("name" in basicRow)) {
     throw new Error(
-      `Nggak nemu field id/name di respons GET /campaigns/${campaignId} Traffic Factory. Field yang ada: ${Object.keys(basicRow).join(", ")}`
+      `Nggak nemu field id/name di respons GET /campaigns/${campaignId} Traffic Factory. Isi respons: ${JSON.stringify(basicRow).slice(0, 500)}`
     );
   }
   return parseCampaignDetail(basicRow, detailedPayload, countries);
