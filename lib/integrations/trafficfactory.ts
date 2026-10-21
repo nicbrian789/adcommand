@@ -1371,6 +1371,12 @@ export type TrafficFactoryVariation = {
   imageUrl: string | null;
   landingUrl: string | null;
   statusLabel: string | null;
+  /** Library URL id (VariationDetails.idvariations_url) — the Library entry actually holding the
+   * raw URL the user typed in. Not shown to the user directly; used by listTrafficFactoryVariations
+   * to resolve the real landing URL, since durl/click_url on the variation itself are TF-generated
+   * tracking-redirect links (confirmed live: durl came back empty and click_url was an
+   * s.tf4srv.com/click.php?... wrapper, not the https://partner-resmi-rbtv.pages.dev/ the user entered). */
+  libraryUrlId: number | null;
 };
 
 function parseVariation(row: Record<string, unknown>): TrafficFactoryVariation {
@@ -1380,12 +1386,37 @@ function parseVariation(row: Record<string, unknown>): TrafficFactoryVariation {
     name: pickFirstString(row, ["name"]),
     active: Number(row.active) === 1,
     imageUrl: pickFirstString(row, ["imgurl"]),
-    // A variation created via id_library_url (not the rejected raw durl) may echo the resolved
-    // landing URL back under a different key than "durl" — click_url/url are the other URL-ish
-    // fields VariationDetails documents, tried here as fallbacks rather than assumed absent.
+    // Fallback only — durl/click_url are frequently a TF-generated tracking-redirect link, not the
+    // raw URL the user entered. listTrafficFactoryVariations overrides this with the real Library
+    // URL value (via libraryUrlId) whenever that lookup succeeds.
     landingUrl: pickFirstString(row, ["durl", "click_url", "url"]),
     statusLabel: calculatedStatus ? pickFirstString(calculatedStatus, ["status"]) : pickFirstString(row, ["status"]),
+    libraryUrlId: pickFirstNumber(row, ["idvariations_url"]),
   };
+}
+
+/** GET /library/url?id_url={id} — fetches a single Library URL entry by id, to recover the raw
+ * URL a user entered (the variation's own durl/click_url fields are TF-generated tracking
+ * redirects, not that raw value). Non-fatal by design: callers treat a failure here as "keep the
+ * fallback value", not as a hard error, since this is an enrichment step, not the primary fetch. */
+async function getTrafficFactoryLibraryUrlById(
+  sessionToken: string,
+  libraryUrlId: number,
+  fetchFn: TfFetch = fetch
+): Promise<string | null> {
+  const url = new URL(`${TRAFFIC_FACTORY_BASE_URL}/library/url`);
+  url.searchParams.set("id_url", String(libraryUrlId));
+  url.searchParams.set("show_extended", "false");
+  const res = await fetchFn(url, { headers: authHeaders(sessionToken) });
+  if (!res.ok) return null;
+  let data: unknown;
+  try {
+    data = JSON.parse(await res.text());
+  } catch {
+    return null;
+  }
+  const [row] = unwrapList(data);
+  return row ? pickFirstString(row, ["url"]) : null;
 }
 
 export async function listTrafficFactoryVariations(
@@ -1406,7 +1437,21 @@ export async function listTrafficFactoryVariations(
   }
   const record = asRecord(data);
   const rows = record && Array.isArray(record.variations) ? (record.variations as Record<string, unknown>[]) : unwrapList(data);
-  return rows.map(parseVariation);
+  const variations = rows.map(parseVariation);
+
+  await Promise.all(
+    variations.map(async (v) => {
+      if (v.libraryUrlId === null) return;
+      try {
+        const realUrl = await getTrafficFactoryLibraryUrlById(sessionToken, v.libraryUrlId, fetchFn);
+        if (realUrl) v.landingUrl = realUrl;
+      } catch {
+        // keep the durl/click_url fallback already set by parseVariation
+      }
+    })
+  );
+
+  return variations;
 }
 
 export type CreateTrafficFactoryVariationInput = {

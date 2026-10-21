@@ -1032,6 +1032,50 @@ describe("Traffic Factory creative upload (Library -> Variation, two separate ca
     assert.equal(variations[0].statusLabel, "Pending");
   });
 
+  it("resolves the real landing URL via /library/url?id_url, not the TF click-tracking redirect in durl/click_url", async () => {
+    // Confirmed live: a variation created via id_library_url comes back with durl empty and
+    // click_url set to TF's own tracking wrapper (https://s.tf4srv.com/click.php?d=...), not the
+    // https://partner-resmi-rbtv.pages.dev/ the user actually typed in. The raw value only lives
+    // in the Library entry itself, fetched by idvariations_url.
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/variation") && !url.pathname.includes("library")) {
+        return jsonResponse({
+          variations: [
+            {
+              idvariation: 7,
+              name: "Promo banner",
+              active: 1,
+              click_url: "https://s.tf4srv.com/click.php?d=H4sIAAAAAAAA",
+              idvariations_url: 123,
+            },
+          ],
+        });
+      }
+      if (url.pathname.endsWith("/library/url")) {
+        assert.equal(url.searchParams.get("id_url"), "123");
+        return jsonResponse({ id: 123, url: "https://partner-resmi-rbtv.pages.dev/", status: 1 });
+      }
+      throw new Error(`Unexpected request to ${url.pathname}`);
+    };
+    const variations = await listTrafficFactoryVariations("session", 42, fetchFn);
+    assert.equal(variations[0].landingUrl, "https://partner-resmi-rbtv.pages.dev/");
+  });
+
+  it("keeps the durl/click_url fallback when the /library/url lookup fails, instead of blanking the row", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/library/url")) return new Response("", { status: 500 });
+      return jsonResponse({
+        variations: [
+          { idvariation: 7, name: "Promo banner", active: 1, click_url: "https://s.tf4srv.com/click.php?d=x", idvariations_url: 123 },
+        ],
+      });
+    };
+    const variations = await listTrafficFactoryVariations("session", 42, fetchFn);
+    assert.equal(variations[0].landingUrl, "https://s.tf4srv.com/click.php?d=x");
+  });
+
   it("reads landingUrl from click_url or url when durl is absent, since a variation created via id_library_url doesn't echo durl back", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
