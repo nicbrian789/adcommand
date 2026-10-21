@@ -711,14 +711,18 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     });
   });
 
-  it("parses a detailed campaign response (campaign + sibling collections), converting cents to dollars and ISO3 countries back to ISO2", async () => {
+  it("parses flat campaign fields from the plain call and sibling collections from the detailed call, converting cents to dollars and ISO3 countries back to ISO2", async () => {
+    const calls: string[] = [];
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       assert.match(url.pathname, /\/campaigns\/123$/);
-      assert.equal(url.searchParams.get("detailed"), "true");
-      return jsonResponse({
-        campaign: {
+      const detailed = url.searchParams.get("detailed") === "true";
+      calls.push(detailed ? "detailed" : "plain");
+      if (!detailed) {
+        // Plain call: flat fields only, no sibling collections — same shape already proven
+        // correct elsewhere (e.g. listTrafficFactoryCampaigns).
+        return jsonResponse({
           id: 123,
           name: "Promo",
           status: 1,
@@ -734,7 +738,11 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
           total_impressions: 100000,
           max_daily_impressions: 5000,
           capping: { quantity: 3, frequency: 1440, level: "Campaign" },
-        },
+        });
+      }
+      // Detailed call: no flat fields at all (deliberately, to prove they're never read from here) —
+      // only the sibling targeting collections.
+      return jsonResponse({
         countries: { elements: [{ country: "IDN" }, { country: "USA" }] },
         categories: { elements: [1, 2] },
         devices: { elements: [10] },
@@ -749,6 +757,8 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
       });
     };
     const detail = await getTrafficFactoryCampaign("session", 123, fetchFn);
+    assert.deepEqual(calls.sort(), ["detailed", "plain"]);
+    assert.equal(detail.name, "Promo");
     assert.equal(detail.status, 1);
     assert.equal(detail.statusLabel, "Running");
     assert.equal(detail.price, 0.5);
@@ -767,6 +777,26 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.deepEqual(detail.dayParting, [{ day: 1, hours: [9, 10] }]);
     assert.deepEqual(detail.sites, { targeted: ["example.com"], blocked: [] });
     assert.deepEqual(detail.keywords, { targeted: [], blocked: ["spam"] });
+  });
+
+  it("keeps name/price/status from the plain call even if the detailed call wraps or omits them differently", async () => {
+    // Regression test: a live account's detailed=true response left name/price/status unreadable
+    // when the code tried to read flat fields from the detailed payload. The plain call must stay
+    // the only source for those, no matter what shape the detailed call's own fields take.
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
+      const detailed = url.searchParams.get("detailed") === "true";
+      if (!detailed) {
+        return jsonResponse({ id: 123, name: "Real Name", status: 1, price: 50, pricing_model: 2 });
+      }
+      // Pathological detailed response: campaign-shaped data nested oddly, nothing at top level.
+      return jsonResponse({ campaign: { name: "Should Not Be Used", status: 0 }, countries: { elements: [] } });
+    };
+    const detail = await getTrafficFactoryCampaign("session", 123, fetchFn);
+    assert.equal(detail.name, "Real Name");
+    assert.equal(detail.status, 1);
+    assert.equal(detail.price, 0.5);
   });
 
   it("sends campaign_ids for play/pause and surfaces partial errors from the bulk response", async () => {

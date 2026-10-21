@@ -777,14 +777,22 @@ function dollarsToCents(dollars: number): number {
 }
 
 /**
- * With ?detailed=true, GET /campaigns/{id} returns { campaign: {...flat fields...}, devices,
- * browsers, languages, countries, categories, sites, keywords, ip_ranges, ... } as siblings of
- * `campaign`, confirmed from CampaignDetail's definition (all of those are in its required list).
- * Without detailed=true the response is just the flat Campaign object — handled as a fallback
- * in case that ever changes, though this file always requests detailed=true.
+ * Two payloads on purpose, same reasoning as getTrafficFactoryAdvertiserAdTypes: `basicRow` is the
+ * plain GET /campaigns/{id} (no detailed param) — the shape already proven correct (it's the same
+ * flat Campaign object the sync/list code has always parsed successfully) — and is the only source
+ * for name/status/price/budget/etc. `detailedPayload` (GET ...?detailed=true) is used only for the
+ * sibling targeting collections (countries/categories/devices/...), since those aren't present
+ * without it. A live account showed the detailed call changing flat-field shape in a way that left
+ * name/price/etc empty when both concerns shared one call — keeping them separate means that can
+ * never again blank out the basic fields.
  */
-function parseCampaignDetail(payload: Record<string, unknown>, countries: TrafficFactoryCountry[]): TrafficFactoryCampaignDetail {
-  const campaign = asRecord(payload.campaign) ?? payload;
+function parseCampaignDetail(
+  basicRow: Record<string, unknown>,
+  detailedPayload: Record<string, unknown>,
+  countries: TrafficFactoryCountry[]
+): TrafficFactoryCampaignDetail {
+  const campaign = basicRow;
+  const payload = detailedPayload;
   const calculatedStatus = asRecord(campaign.calculated_status);
   const capping = asRecord(campaign.capping);
 
@@ -841,17 +849,15 @@ function parseCampaignDetail(payload: Record<string, unknown>, countries: Traffi
   };
 }
 
-export async function getTrafficFactoryCampaign(
+async function fetchCampaignRaw(
   sessionToken: string,
   campaignId: number,
-  fetchFn: TfFetch = fetch
-): Promise<TrafficFactoryCampaignDetail> {
+  fetchFn: TfFetch,
+  detailed: boolean
+): Promise<Record<string, unknown>> {
   const url = new URL(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}`);
-  url.searchParams.set("detailed", "true");
-  const [res, countries] = await Promise.all([
-    fetchFn(url, { headers: authHeaders(sessionToken) }),
-    getTrafficFactoryCountries(sessionToken, fetchFn),
-  ]);
+  if (detailed) url.searchParams.set("detailed", "true");
+  const res = await fetchFn(url, { headers: authHeaders(sessionToken) });
   const text = await res.text();
   if (!res.ok) {
     throwTrafficFactoryHttpError(`/campaigns/${campaignId}`, res.status, text);
@@ -864,7 +870,20 @@ export async function getTrafficFactoryCampaign(
   }
   const row = asRecord(data);
   if (!row) throw new Error(`Respons /campaigns/${campaignId} Traffic Factory tidak terduga: ${text.slice(0, 300)}`);
-  return parseCampaignDetail(row, countries);
+  return row;
+}
+
+export async function getTrafficFactoryCampaign(
+  sessionToken: string,
+  campaignId: number,
+  fetchFn: TfFetch = fetch
+): Promise<TrafficFactoryCampaignDetail> {
+  const [basicRow, detailedPayload, countries] = await Promise.all([
+    fetchCampaignRaw(sessionToken, campaignId, fetchFn, false),
+    fetchCampaignRaw(sessionToken, campaignId, fetchFn, true),
+    getTrafficFactoryCountries(sessionToken, fetchFn),
+  ]);
+  return parseCampaignDetail(basicRow, detailedPayload, countries);
 }
 
 async function findTrafficFactoryCampaignByName(
