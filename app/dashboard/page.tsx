@@ -218,14 +218,14 @@ export default async function DashboardPage({
   const roas = total.spend > 0 ? total.revenue / total.spend : 0;
 
   const kpis = [
-    { label: "Spend", value: money(total.spend), isMoney: true },
-    { label: "Impressions", value: count(total.impressions), isMoney: false },
-    { label: "Klik", value: count(total.clicks), isMoney: false },
-    { label: "CTR", value: `${ctr.toFixed(2)}%`, isMoney: false },
-    { label: "CPC", value: `$${cpc.toFixed(4)}`, isMoney: true },
-    { label: "Konversi", value: count(total.conversions), isMoney: false },
-    { label: "Revenue", value: money(total.revenue), isMoney: true },
-    { label: "ROAS", value: `${roas.toFixed(2)}x`, isMoney: false },
+    { label: "Spend", value: money(total.spend), isMoney: true, chip: "#3b82f6" },
+    { label: "Impressions", value: count(total.impressions), isMoney: false, chip: "#06b6d4" },
+    { label: "Klik", value: count(total.clicks), isMoney: false, chip: "#22c55e" },
+    { label: "CTR", value: `${ctr.toFixed(2)}%`, isMoney: false, chip: "#f59e0b" },
+    { label: "CPC", value: `$${cpc.toFixed(4)}`, isMoney: true, chip: "#a855f7" },
+    { label: "Konversi", value: count(total.conversions), isMoney: false, chip: "#ec4899" },
+    { label: "Revenue", value: money(total.revenue), isMoney: true, chip: "#10b981" },
+    { label: "ROAS", value: `${roas.toFixed(2)}x`, isMoney: false, chip: "#6366f1" },
   ];
 
   return (
@@ -265,6 +265,7 @@ export default async function DashboardPage({
           <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {kpis.map((k) => (
               <div key={k.label} className="rounded-xl border border-border bg-surface p-4">
+                <div className="h-6 w-6 rounded-md mb-2" style={{ backgroundColor: k.chip }} />
                 <div className="text-[11px] uppercase tracking-wide text-muted mb-1">{k.label}</div>
                 <div className={`text-lg font-semibold tabular-nums ${k.isMoney ? "text-success" : ""}`}>{k.value}</div>
               </div>
