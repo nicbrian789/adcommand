@@ -524,15 +524,13 @@ function parseAspectRatios(value: unknown): TrafficFactoryAspectRatio[] {
   return out;
 }
 
-export async function getTrafficFactoryAdvertiserAdTypes(
+async function fetchAdvertiserAdTypesRaw(
   sessionToken: string,
-  fetchFn: TfFetch = fetch
-): Promise<TrafficFactoryAdvertiserAdType[]> {
+  fetchFn: TfFetch,
+  showDetails: boolean
+): Promise<Record<string, unknown>[]> {
   const url = new URL(`${TRAFFIC_FACTORY_BASE_URL}/collections/advertiser-ad-types`);
-  // aspect_ratios (real accepted image-dimension ranges, confirmed from a live 400: "Asset does
-  // not meet the required dimensions or aspect ratio") isn't in the response without this —
-  // it's absent from the schema's required-fields list, unlike size/media_storage_templates.
-  url.searchParams.set("show_details", "true");
+  if (showDetails) url.searchParams.set("show_details", "true");
   const res = await fetchFn(url, { headers: authHeaders(sessionToken) });
   const text = await res.text();
   if (!res.ok) {
@@ -544,8 +542,33 @@ export async function getTrafficFactoryAdvertiserAdTypes(
   } catch {
     throw new Error(`Respons /collections/advertiser-ad-types Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
   }
-  const rows = unwrapList(data);
-  return rows
+  return unwrapList(data);
+}
+
+export async function getTrafficFactoryAdvertiserAdTypes(
+  sessionToken: string,
+  fetchFn: TfFetch = fetch
+): Promise<TrafficFactoryAdvertiserAdType[]> {
+  // Two separate calls on purpose: the plain call (no show_details) is the one already proven
+  // in production to return media_storage_templates/size as flat string arrays. show_details=true
+  // was added later purely to read aspect_ratios (confirmed needed from a live 400: "Asset does
+  // not meet the required dimensions or aspect ratio"), but it turned out to also change the
+  // shape of media_storage_templates on a live account, silently breaking every ad type's
+  // templates when both concerns shared one call. Keeping them separate means the proven call
+  // can never regress regardless of what show_details does to other fields.
+  const [basicRows, detailedRows] = await Promise.all([
+    fetchAdvertiserAdTypesRaw(sessionToken, fetchFn, false),
+    fetchAdvertiserAdTypesRaw(sessionToken, fetchFn, true),
+  ]);
+
+  const aspectRatiosById = new Map<number, TrafficFactoryAspectRatio[]>();
+  for (const row of detailedRows) {
+    const id = pickFirstNumber(row, ["id"]);
+    if (id === null) continue;
+    aspectRatiosById.set(id, parseAspectRatios(row.aspect_ratios));
+  }
+
+  return basicRows
     .map((row) => {
       const id = pickFirstNumber(row, ["id"]);
       const name = pickFirstString(row, ["name"]);
@@ -554,7 +577,7 @@ export async function getTrafficFactoryAdvertiserAdTypes(
         ? (row.media_storage_templates as unknown[]).filter((t): t is string => typeof t === "string")
         : [];
       const sizes = Array.isArray(row.size) ? (row.size as unknown[]).filter((s): s is string => typeof s === "string") : [];
-      return { id, name, mediaStorageTemplates: templates, sizes, aspectRatios: parseAspectRatios(row.aspect_ratios) };
+      return { id, name, mediaStorageTemplates: templates, sizes, aspectRatios: aspectRatiosById.get(id) ?? [] };
     })
     .filter((x): x is TrafficFactoryAdvertiserAdType => x !== null);
 }

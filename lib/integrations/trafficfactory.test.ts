@@ -313,18 +313,22 @@ describe("Traffic Factory country breakdown (/statistics/a/country)", () => {
 });
 
 describe("Traffic Factory campaign create/edit/pause/delete", () => {
-  it("fetches advertiser ad type presets with show_details=true, including aspect_ratios (needed for real image dimension limits)", async () => {
+  it("fetches advertiser ad type presets from the plain call, merging in aspect_ratios from a separate show_details=true call", async () => {
+    const calls: string[] = [];
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
       assert.match(url.pathname, /\/collections\/advertiser-ad-types$/);
-      assert.equal(url.searchParams.get("show_details"), "true");
+      const detailed = url.searchParams.get("show_details") === "true";
+      calls.push(detailed ? "detailed" : "plain");
+      if (!detailed) {
+        // The plain call is the one already proven in production — no aspect_ratios here at all.
+        return jsonResponse({ result: [{ id: 5, name: "img_banner", media_storage_templates: ["img_banner"], size: ["300x250"] }] });
+      }
       return jsonResponse({
         result: [
           {
             id: 5,
             name: "img_banner",
-            media_storage_templates: ["img_banner"],
-            size: ["300x250"],
             aspect_ratios: [
               { id: 1, aspect_ratio: "1.2:1", tag: "300x250 (+/- 10%)", flexibility: 10, min_width: 270, max_width: 330, min_height: 225, max_height: 275 },
             ],
@@ -333,10 +337,28 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
       });
     };
     const types = await getTrafficFactoryAdvertiserAdTypes("session", fetchFn);
+    assert.deepEqual(calls.sort(), ["detailed", "plain"]);
     assert.equal(types.length, 1);
     assert.equal(types[0].id, 5);
     assert.deepEqual(types[0].mediaStorageTemplates, ["img_banner"]);
     assert.deepEqual(types[0].aspectRatios, [{ tag: "300x250 (+/- 10%)", minWidth: 270, maxWidth: 330, minHeight: 225, maxHeight: 275 }]);
+  });
+
+  it("keeps media_storage_templates from the plain call even if the show_details call returns them in a different (non-string) shape", async () => {
+    // Regression test: a live account returned media_storage_templates as objects, not strings,
+    // when show_details=true, which silently emptied every ad type's templates when both concerns
+    // shared one call. The plain call must stay the source of truth for templates/size.
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      const detailed = url.searchParams.get("show_details") === "true";
+      if (!detailed) {
+        return jsonResponse({ result: [{ id: 5, name: "img_banner", media_storage_templates: ["img_banner"], size: ["300x250"] }] });
+      }
+      return jsonResponse({ result: [{ id: 5, name: "img_banner", media_storage_templates: [{ tag: "img_banner" }], size: [{ tag: "300x250" }] }] });
+    };
+    const types = await getTrafficFactoryAdvertiserAdTypes("session", fetchFn);
+    assert.deepEqual(types[0].mediaStorageTemplates, ["img_banner"]);
+    assert.deepEqual(types[0].sizes, ["300x250"]);
   });
 
   it("returns an empty aspectRatios array when the ad type has none (not crashing on a missing field)", async () => {
