@@ -92,6 +92,25 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
+/**
+ * Like pickFirstNumber, but also unwraps a `{id, name}`-style enum object and returns its `id` —
+ * confirmed from a live response that pricing_model comes back this way on GET /campaigns/{id}
+ * (e.g. {"id":0,"name":"Standard"}), not as the bare integer the schema documents.
+ */
+function pickFirstNumberOrObjectId(row: Record<string, unknown>, keys: readonly string[]): number | null {
+  for (const key of keys) {
+    const v = row[key];
+    if (v == null) continue;
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    const obj = asRecord(v);
+    if (obj) {
+      const id = pickFirstNumber(obj, ["id"]);
+      if (id !== null) return id;
+    }
+  }
+  return null;
+}
+
 /** Unwrap common list envelopes used by TF-style JSON APIs (campaigns, etc.). */
 export function unwrapList(data: unknown): Record<string, unknown>[] {
   if (Array.isArray(data)) {
@@ -808,10 +827,10 @@ function parseCampaignDetail(
   return {
     id: pickFirstNumber(campaign, ["id"]) ?? 0,
     name: pickFirstString(campaign, ["name"]) ?? "",
-    status: pickFirstNumber(campaign, ["status"]) ?? 0,
+    status: pickFirstNumberOrObjectId(campaign, ["status"]) ?? 0,
     statusLabel: calculatedStatus ? pickFirstString(calculatedStatus, ["status"]) : null,
     price: centsToDollars(pickFirstNumber(campaign, ["price"])),
-    pricingModel: pickFirstNumber(campaign, ["pricing_model"]),
+    pricingModel: pickFirstNumberOrObjectId(campaign, ["pricing_model"]),
     maxDailyBudget: centsToDollars(pickFirstNumber(campaign, ["max_daily_budget"])),
     totalBudgetLimit: centsToDollars(pickFirstNumber(campaign, ["total_budget_limit"])),
     advertiserAdType: pickFirstNumber(campaign, ["advertiser_ad_type"]),
@@ -855,6 +874,14 @@ function parseCampaignDetail(
  * picks whichever candidate actually looks like a campaign (has both id and name) rather than
  * assuming one shape.
  */
+/**
+ * Confirmed from a live response: GET /campaigns/{id} (no detailed param) actually returns
+ * { result: { campaign: {...flat fields...} } } — the "campaign" sub-object the CampaignDetail
+ * schema documents for ?detailed=true, except it's ALSO used here, nested one level deeper under
+ * "result" too. Checked in order: the two confirmed real shapes first, then the originally-assumed
+ * ones (object directly under a wrapper key, or a one-item array) as a safety net in case the
+ * shape differs again on another account or a future API change.
+ */
 function unwrapSingleCampaignObject(data: unknown): Record<string, unknown> | null {
   const root = asRecord(data);
   if (!root) return null;
@@ -863,10 +890,11 @@ function unwrapSingleCampaignObject(data: unknown): Record<string, unknown> | nu
   for (const key of ["result", "data", "campaign"]) {
     const value = root[key];
     const nested = asRecord(value);
-    if (nested && looksLikeCampaign(nested)) return nested;
-    // Confirmed from a live response ("Field yang ada: result, request_metadata"): GET
-    // /campaigns/{id} reuses the same { result: [...], request_metadata } envelope as the list
-    // endpoint GET /campaigns, so a single campaign still comes back as a one-item array.
+    if (nested) {
+      if (looksLikeCampaign(nested)) return nested;
+      const innerCampaign = asRecord(nested.campaign);
+      if (innerCampaign && looksLikeCampaign(innerCampaign)) return innerCampaign;
+    }
     if (Array.isArray(value) && value.length > 0) {
       const first = asRecord(value[0]);
       if (first && looksLikeCampaign(first)) return first;
@@ -914,7 +942,7 @@ export async function getTrafficFactoryCampaign(
   // already) so the next failure gives a definitive answer instead of another guess.
   if (!("id" in basicRow) || !("name" in basicRow)) {
     throw new Error(
-      `Nggak nemu field id/name di respons GET /campaigns/${campaignId} Traffic Factory. Isi respons: ${JSON.stringify(basicRow).slice(0, 500)}`
+      `Nggak nemu field id/name di respons GET /campaigns/${campaignId} Traffic Factory. Isi respons: ${JSON.stringify(basicRow).slice(0, 2000)}`
     );
   }
   return parseCampaignDetail(basicRow, detailedPayload, countries);

@@ -834,6 +834,40 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.equal(detail.status, 0);
   });
 
+  it("unwraps { result: { campaign: {...} } } — the actual confirmed live shape of GET /campaigns/{id}, one level deeper than { campaign: {...} }", async () => {
+    const fetchFn: TfFetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
+      const detailed = url.searchParams.get("detailed") === "true";
+      if (!detailed) {
+        return jsonResponse({
+          result: {
+            campaign: {
+              id: 166310,
+              is_editable: true,
+              name: "tester5",
+              idgroup: null,
+              advertiser_ad_type: 14,
+              media_storage_template: "img_banner",
+              size: "300x100",
+              // Confirmed live: pricing_model comes back as {id, name}, not a bare integer.
+              pricing_model: { id: 0, name: "Standard" },
+              status: 0,
+              price: 10,
+            },
+          },
+        });
+      }
+      return jsonResponse({ countries: { elements: [] } });
+    };
+    const detail = await getTrafficFactoryCampaign("session", 166310, fetchFn);
+    assert.equal(detail.id, 166310);
+    assert.equal(detail.name, "tester5");
+    assert.equal(detail.pricingModel, 0);
+    assert.equal(detail.advertiserAdType, 14);
+    assert.equal(detail.size, "300x100");
+  });
+
   it("throws a diagnosable error instead of silently rendering a blank form when id/name can't be found anywhere", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
