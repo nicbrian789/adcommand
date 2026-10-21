@@ -762,16 +762,42 @@ export async function getTrafficFactoryTimezones(sessionToken: string, fetchFn: 
 
 export type TrafficFactoryMultiStringList = { targeted: string[]; blocked: string[] };
 
-function parseMultiStringCollection(value: unknown): TrafficFactoryMultiStringList {
+/**
+ * Confirmed live (campaign 166310's detailed payload): every targeting collection in the detailed
+ * GET response (countries/categories/devices/browsers/operating_systems/languages/carriers/sites/
+ * keywords/ip_ranges) uses `{targeted: [...full objects...], blocked: [...full objects...]}` —
+ * completely different from the `{type, elements: [ids]}` shape the WRITE side (POST/PUT body)
+ * uses for the same concepts (confirmed separately from CampaignCollectionInt/Country). Previously
+ * assumed the read side reused the write shape, which is why Edit always showed every targeting
+ * field empty regardless of what was actually set — this wasn't a wrapper-depth issue like the
+ * campaign/countries split, it was the wrong shape entirely.
+ * Also confirmed live: at least browsers/carriers come back as a bare array (not the {targeted,
+ * blocked} object) when nothing is targeted — handled defensively here as "targeted, no blocked".
+ */
+function extractTargetedArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  const targeted = asRecord(value)?.targeted;
+  return Array.isArray(targeted) ? targeted : [];
+}
+
+/** field = the one string property each item object carries: "url" for sites (CampaignSite),
+ * "keyword" for keywords (CampaignKeyword), "ip_range" for ip ranges (CampaignIpRange). */
+function parseMultiStringCollection(value: unknown, field: string): TrafficFactoryMultiStringList {
+  const extract = (arr: unknown): string[] => {
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((item) => (typeof item === "string" ? item : pickFirstString(asRecord(item) ?? {}, [field])))
+      .filter((s): s is string => !!s);
+  };
+  if (Array.isArray(value)) return { targeted: extract(value), blocked: [] };
   const row = asRecord(value);
-  const toStrings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
-  return { targeted: toStrings(row?.targeted), blocked: toStrings(row?.blocked) };
+  return { targeted: extract(row?.targeted), blocked: extract(row?.blocked) };
 }
 
 function parseIntCollectionIds(value: unknown): number[] {
-  const row = asRecord(value);
-  const elements = row?.elements;
-  return Array.isArray(elements) ? elements.filter((x): x is number => typeof x === "number") : [];
+  return extractTargetedArray(value)
+    .map((item) => pickFirstNumber(asRecord(item) ?? {}, ["id"]))
+    .filter((id): id is number => id !== null);
 }
 
 export type TrafficFactoryCampaignDetail = {
@@ -864,22 +890,19 @@ function unwrapDetailedPayload(detailedPayload: Record<string, unknown>): Record
 
 function parseCampaignDetail(
   basicRow: Record<string, unknown>,
-  detailedPayload: Record<string, unknown>,
-  countries: TrafficFactoryCountry[]
+  detailedPayload: Record<string, unknown>
 ): TrafficFactoryCampaignDetail {
   const campaign = basicRow;
   const payload = unwrapDetailedPayload(detailedPayload);
   const calculatedStatus = asRecord(campaign.calculated_status);
   const capping = asRecord(campaign.capping);
 
-  const iso3ToIso2 = new Map(countries.map((c) => [c.iso3, c.iso2]));
-  const countryEls = asRecord(payload.countries)?.elements;
-  const countryCodes = Array.isArray(countryEls)
-    ? countryEls
-        .map((e) => pickFirstString(asRecord(e) ?? {}, ["country"]))
-        .filter((c): c is string => !!c)
-        .map((iso3) => iso3ToIso2.get(iso3.toUpperCase()) ?? iso3)
-    : [];
+  // Confirmed live: each targeted Country object carries its own iso2 directly (Country schema),
+  // so no separate iso3->iso2 lookup against /collections/countries is needed here anymore — that
+  // lookup is still used elsewhere (resolving what the user types back into iso3 for the PUT body).
+  const countryCodes = extractTargetedArray(payload.countries)
+    .map((c) => pickFirstString(asRecord(c) ?? {}, ["iso2"]))
+    .filter((c): c is string => !!c);
 
   return {
     id: pickFirstNumber(campaign, ["id"]) ?? 0,
@@ -906,22 +929,22 @@ function parseCampaignDetail(
     osIds: parseIntCollectionIds(payload.operating_systems),
     languageIds: parseIntCollectionIds(payload.languages),
     carrierIds: parseIntCollectionIds(payload.carriers),
-    sites: parseMultiStringCollection(payload.sites),
-    keywords: parseMultiStringCollection(payload.keywords),
-    ipRanges: parseMultiStringCollection(payload.ip_ranges),
-    dayPartingTimezone: pickFirstString(asRecord(payload.day_parting) ?? {}, ["timezone"]),
-    dayParting: (() => {
-      const parting = asRecord(payload.day_parting)?.parting;
-      if (!Array.isArray(parting)) return [];
-      return parting
-        .map((p) => {
-          const row = asRecord(p);
-          const day = row ? pickFirstNumber(row, ["day"]) : null;
-          const hours = Array.isArray(row?.hours) ? row.hours.filter((h): h is number => typeof h === "number") : [];
-          return day !== null ? { day, hours } : null;
-        })
-        .filter((x): x is TrafficFactoryDayPartEntry => x !== null);
-    })(),
+    sites: parseMultiStringCollection(payload.sites, "url"),
+    keywords: parseMultiStringCollection(payload.keywords, "keyword"),
+    ipRanges: parseMultiStringCollection(payload.ip_ranges, "ip_range"),
+    // Confirmed live: unlike every other sibling collection, day_parting in CampaignDetail is a
+    // plain array of {day, hours} directly (CampaignDayParting), not wrapped in {parting: [...]}
+    // the way the write-side CampaignGlobalDayParting body is — and the timezone isn't part of it
+    // at all, it's the flat campaign.parting_timezone field instead.
+    dayPartingTimezone: pickFirstString(campaign, ["parting_timezone"]),
+    dayParting: (Array.isArray(payload.day_parting) ? payload.day_parting : [])
+      .map((p) => {
+        const row = asRecord(p);
+        const day = row ? pickFirstNumber(row, ["day"]) : null;
+        const hours = Array.isArray(row?.hours) ? row.hours.filter((h): h is number => typeof h === "number") : [];
+        return day !== null ? { day, hours } : null;
+      })
+      .filter((x): x is TrafficFactoryDayPartEntry => x !== null),
   };
 }
 
@@ -1011,10 +1034,9 @@ export async function getTrafficFactoryCampaign(
   campaignId: number,
   fetchFn: TfFetch = fetch
 ): Promise<TrafficFactoryCampaignDetail> {
-  const [basicRow, detailedPayload, countries] = await Promise.all([
+  const [basicRow, detailedPayload] = await Promise.all([
     fetchCampaignRaw(sessionToken, campaignId, fetchFn, false),
     fetchCampaignRaw(sessionToken, campaignId, fetchFn, true),
-    getTrafficFactoryCountries(sessionToken, fetchFn),
   ]);
   // If id/name still can't be found after unwrapping, don't silently render a blank form again —
   // surface the raw response (not just key names, which weren't enough to diagnose this once
@@ -1024,7 +1046,7 @@ export async function getTrafficFactoryCampaign(
       `Nggak nemu field id/name di respons GET /campaigns/${campaignId} Traffic Factory. Isi respons: ${JSON.stringify(basicRow).slice(0, 2000)}`
     );
   }
-  const detail = parseCampaignDetail(basicRow, detailedPayload, countries);
+  const detail = parseCampaignDetail(basicRow, detailedPayload);
   // Countries are required when a campaign is created through this app (validated before the
   // create call ever goes out), so a campaign coming back with none on Edit almost certainly means
   // the sibling-collection unwrap guessed wrong again rather than the campaign genuinely having no

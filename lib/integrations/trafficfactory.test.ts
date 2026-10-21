@@ -743,11 +743,14 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     assert.deepEqual(capturedBody, { name: "New Name" });
   });
 
-  it("parses flat campaign fields from the plain call and sibling collections from the detailed call, converting cents to dollars and ISO3 countries back to ISO2", async () => {
+  it("parses flat campaign fields from the plain call and sibling collections from the detailed call, converting cents to dollars", async () => {
+    // Detailed-call collection shapes below are the actual confirmed live shape (campaign 166310):
+    // {targeted: [...full objects...], blocked: [...]} per collection — NOT the {type, elements:
+    // [ids]} shape used on the write side for the same concepts. Each targeted item carries its own
+    // id (and iso2 for countries) directly, so no separate countries lookup is needed to read these.
     const calls: string[] = [];
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
-      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       assert.match(url.pathname, /\/campaigns\/123$/);
       const detailed = url.searchParams.get("detailed") === "true";
       calls.push(detailed ? "detailed" : "plain");
@@ -770,22 +773,23 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
           total_impressions: 100000,
           max_daily_impressions: 5000,
           capping: { quantity: 3, frequency: 1440, level: "Campaign" },
+          parting_timezone: "Asia/Jakarta",
         });
       }
       // Detailed call: no flat fields at all (deliberately, to prove they're never read from here) —
       // only the sibling targeting collections.
       return jsonResponse({
-        countries: { elements: [{ country: "IDN" }, { country: "USA" }] },
-        categories: { elements: [1, 2] },
-        devices: { elements: [10] },
-        browsers: { elements: [] },
-        operating_systems: { elements: [20, 21] },
-        languages: { elements: [] },
-        sites: { targeted: ["example.com"], blocked: [] },
-        keywords: { targeted: [], blocked: ["spam"] },
+        countries: { targeted: [{ id: 2, iso2: "ID", iso3: "IDN" }, { id: 1, iso2: "US", iso3: "USA" }], blocked: [] },
+        categories: { targeted: [{ id: 1, name: "A" }, { id: 2, name: "B" }], blocked: [] },
+        devices: { targeted: [{ id: 10, name: "iPhone" }], blocked: [] },
+        browsers: [], // confirmed live: bare array when nothing is targeted
+        operating_systems: { targeted: [{ id: 20 }, { id: 21 }], blocked: [] },
+        languages: [],
+        sites: { targeted: [{ url: "example.com" }], blocked: [] },
+        keywords: { targeted: [], blocked: [{ keyword: "spam" }] },
         ip_ranges: { targeted: [], blocked: [] },
-        carriers: { elements: [7] },
-        day_parting: { timezone: "Asia/Jakarta", parting: [{ day: 1, hours: [9, 10] }] },
+        carriers: { targeted: [{ id: 7 }], blocked: [] },
+        day_parting: [{ day: 1, hours: [9, 10] }],
       });
     };
     const detail = await getTrafficFactoryCampaign("session", 123, fetchFn);
@@ -817,13 +821,12 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     // the only source for those, no matter what shape the detailed call's own fields take.
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
-      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       const detailed = url.searchParams.get("detailed") === "true";
       if (!detailed) {
         return jsonResponse({ id: 123, name: "Real Name", status: 1, price: 50, pricing_model: 2 });
       }
       // Pathological detailed response: campaign-shaped data nested oddly, nothing at top level.
-      return jsonResponse({ campaign: { name: "Should Not Be Used", status: 0 }, countries: { elements: [] } });
+      return jsonResponse({ campaign: { name: "Should Not Be Used", status: 0 }, countries: { targeted: [] } });
     };
     const detail = await getTrafficFactoryCampaign("session", 123, fetchFn);
     assert.equal(detail.name, "Real Name");
@@ -834,13 +837,12 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
   it("unwraps the plain call's campaign object from a result/data wrapper when it isn't at the top level", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
-      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       const detailed = url.searchParams.get("detailed") === "true";
       if (!detailed) {
         // Wrapped like the list endpoints, not flat at the top level.
         return jsonResponse({ result: { id: 123, name: "Wrapped Name", status: 1, price: 50 } });
       }
-      return jsonResponse({ countries: { elements: [] } });
+      return jsonResponse({ countries: { targeted: [] } });
     };
     const detail = await getTrafficFactoryCampaign("session", 123, fetchFn);
     assert.equal(detail.name, "Wrapped Name");
@@ -850,7 +852,6 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
   it("unwraps a single campaign from a one-item result array (confirmed live shape: GET /campaigns/{id} reuses the list envelope)", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
-      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       const detailed = url.searchParams.get("detailed") === "true";
       if (!detailed) {
         return jsonResponse({
@@ -858,7 +859,7 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
           request_metadata: { limit: 50, offset: 0, count: 1 },
         });
       }
-      return jsonResponse({ countries: { elements: [] } });
+      return jsonResponse({ countries: { targeted: [] } });
     };
     const detail = await getTrafficFactoryCampaign("session", 166310, fetchFn);
     assert.equal(detail.id, 166310);
@@ -869,7 +870,6 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
   it("unwraps { result: { campaign: {...} } } — the actual confirmed live shape of GET /campaigns/{id}, one level deeper than { campaign: {...} }", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
-      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       const detailed = url.searchParams.get("detailed") === "true";
       if (!detailed) {
         return jsonResponse({
@@ -890,7 +890,7 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
           },
         });
       }
-      return jsonResponse({ countries: { elements: [] } });
+      return jsonResponse({ countries: { targeted: [] } });
     };
     const detail = await getTrafficFactoryCampaign("session", 166310, fetchFn);
     assert.equal(detail.id, 166310);
@@ -903,7 +903,6 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
   it("also unwraps the detailed call's sibling targeting collections from a .result wrapper, not just the top level", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
-      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       const detailed = url.searchParams.get("detailed") === "true";
       if (!detailed) {
         return jsonResponse({ result: { campaign: { id: 166310, name: "tester5" } } });
@@ -912,9 +911,9 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
       // plain call's confirmed wrapper pattern.
       return jsonResponse({
         result: {
-          countries: { elements: [{ country: "IDN" }] },
-          categories: { elements: [1, 2, 3] },
-          devices: { elements: [10] },
+          countries: { targeted: [{ id: 2, iso2: "ID", iso3: "IDN" }], blocked: [] },
+          categories: { targeted: [{ id: 1 }, { id: 2 }, { id: 3 }], blocked: [] },
+          devices: { targeted: [{ id: 10 }], blocked: [] },
         },
       });
     };
@@ -926,25 +925,23 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
 
   it("doesn't discard sibling targeting collections when the detailed call nests `campaign` alongside them under .result (the actual confirmed live shape)", async () => {
     // Confirmed live from campaign 166310: the detailed call's real shape is
-    // { result: { campaign: {...flat...}, countries: {...}, categories: {...}, devices: {...} } } —
-    // campaign and the siblings live at the SAME level inside result, not one inside the other.
-    // Reusing unwrapSingleCampaignObject (built for the plain call) here was digging straight into
-    // result.campaign because it has id/name and matches first, silently dropping every sibling
-    // collection — Edit showed 0 countries/categories for every campaign with this exact shape.
+    // { campaign: {...flat...}, countries: {targeted:[...]}, categories: {targeted:[...]},
+    // devices: {targeted:[...]}, ... } — no .result wrapper at all this time (CampaignDetail is the
+    // documented top-level response shape), and campaign/siblings are SIBLINGS, not nested. Reusing
+    // unwrapSingleCampaignObject (built for the plain call) here was digging straight into
+    // result.campaign/.campaign because it has id/name and matches first, silently dropping every
+    // sibling collection — Edit showed 0 countries/categories for every campaign with this shape.
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
-      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       const detailed = url.searchParams.get("detailed") === "true";
       if (!detailed) {
         return jsonResponse({ result: { campaign: { id: 166310, name: "tester5", status: 1, price: 1 } } });
       }
       return jsonResponse({
-        result: {
-          campaign: { id: 166310, name: "tester5", status: 1, price: 1 },
-          countries: { elements: [{ country: "IDN" }] },
-          categories: { elements: [5] },
-          devices: { elements: [10] },
-        },
+        campaign: { id: 166310, name: "tester5", status: 1, price: 1 },
+        countries: { targeted: [{ id: 2, iso2: "ID", iso3: "IDN" }], blocked: [] },
+        categories: { targeted: [{ id: 5 }], blocked: [] },
+        devices: { targeted: [{ id: 10 }], blocked: [] },
       });
     };
     const detail = await getTrafficFactoryCampaign("session", 166310, fetchFn);
@@ -957,10 +954,9 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
   it("throws a diagnosable error instead of silently rendering a blank form when id/name can't be found anywhere", async () => {
     const fetchFn: TfFetch = async (input) => {
       const url = new URL(String(input));
-      if (url.pathname === "/v2/collections/countries") return jsonResponse(COUNTRY_FIXTURE);
       const detailed = url.searchParams.get("detailed") === "true";
       if (!detailed) return jsonResponse({ some_unexpected_field: "mystery shape" });
-      return jsonResponse({ countries: { elements: [] } });
+      return jsonResponse({ countries: { targeted: [] } });
     };
     await assert.rejects(() => getTrafficFactoryCampaign("session", 123, fetchFn), /Nggak nemu field id\/name/);
   });
