@@ -1086,10 +1086,12 @@ function applyExtendedTargetingBody(body: Record<string, unknown>, input: Extend
   if (input.dayParting !== undefined) body.day_parting = input.dayParting;
   if (input.startDate !== undefined) body.start_date = input.startDate;
   if (input.endDate !== undefined) body.end_date = input.endDate;
-  if (input.totalImpressions !== undefined) body.total_impressions = input.totalImpressions;
-  if (input.maxDailyImpressions !== undefined) {
+  // Confirmed live (400): "total impressions should be >= 1000" — same blank-means-0 footgun as
+  // the budget fields above, so only send it when actually positive.
+  if (input.totalImpressions !== undefined && input.totalImpressions > 0) body.total_impressions = input.totalImpressions;
+  if (input.maxDailyImpressions !== undefined && input.maxDailyImpressions > 0) {
     body.max_daily_impressions = input.maxDailyImpressions;
-    if (input.maxDailyImpressions > 0 && body.daily_limit_type === undefined) body.daily_limit_type = 2;
+    if (body.daily_limit_type === undefined) body.daily_limit_type = 2;
   }
   if (input.frequencyCapping !== undefined) {
     body.frequency_capping = {
@@ -1211,8 +1213,14 @@ export async function updateTrafficFactoryCampaign(
   const body: Record<string, unknown> = {};
   if (input.name !== undefined) body.name = input.name;
   if (input.status !== undefined) body.status = input.status;
-  if (input.categoryIds !== undefined) body.categories = { type: "targeted", elements: input.categoryIds };
-  if (input.countries !== undefined) {
+  // Confirmed live (400): "Campaign categories elements cannot be empty." / "...countries elements
+  // cannot be empty." — TF rejects an explicit empty collection outright, so an empty selection here
+  // means "leave it as-is" (omit the field), not "clear it". There's no supported way to clear
+  // categories/countries to "no filter" via this endpoint.
+  if (input.categoryIds !== undefined && input.categoryIds.length > 0) {
+    body.categories = { type: "targeted", elements: input.categoryIds };
+  }
+  if (input.countries !== undefined && input.countries.length > 0) {
     const countries = await getTrafficFactoryCountries(sessionToken, fetchFn);
     const iso3 = resolveCountryIso3Codes(input.countries, countries);
     body.countries = { type: "targeted", elements: iso3.map((c) => ({ country: c })) };
@@ -1220,11 +1228,17 @@ export async function updateTrafficFactoryCampaign(
   if (input.pricingModel !== undefined && input.price !== undefined) {
     body.pricing = { model: input.pricingModel, price: dollarsToCents(input.price) };
   }
-  if (input.maxDailyBudget !== undefined) {
+  // Confirmed live (400): "total budget limit should be >= 2000" / "total impressions should be
+  // >= 1000" (cents/count respectively) — these have a server-side minimum when present at all, and
+  // a blank UI field is meant as "unlimited/unchanged", not "set to 0". Only send a limit when the
+  // caller actually provided a positive number; undefined/0 both mean "don't touch this field".
+  if (input.maxDailyBudget !== undefined && input.maxDailyBudget > 0) {
     body.max_daily_budget = dollarsToCents(input.maxDailyBudget);
-    body.daily_limit_type = input.maxDailyBudget > 0 ? 1 : 0;
+    body.daily_limit_type = 1;
   }
-  if (input.totalBudgetLimit !== undefined) body.total_budget_limit = dollarsToCents(input.totalBudgetLimit);
+  if (input.totalBudgetLimit !== undefined && input.totalBudgetLimit > 0) {
+    body.total_budget_limit = dollarsToCents(input.totalBudgetLimit);
+  }
   applyExtendedTargetingBody(body, input);
 
   const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/campaigns/${campaignId}`, {

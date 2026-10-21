@@ -712,6 +712,37 @@ describe("Traffic Factory campaign create/edit/pause/delete", () => {
     });
   });
 
+  it("omits categories/countries from the update body when given empty, instead of sending an empty collection TF rejects", async () => {
+    // Confirmed live (400): "Campaign categories elements cannot be empty." / "...countries
+    // elements cannot be empty." A cleared selection means "leave it as-is", not "clear it" —
+    // there's no supported way to clear these via this endpoint.
+    let capturedBody: Record<string, unknown> | undefined;
+    const fetchFn: TfFetch = async (input, init) => {
+      capturedBody = JSON.parse(String(init?.body));
+      return new Response("", { status: 200 });
+    };
+    await updateTrafficFactoryCampaign("session", 123, { name: "New Name", categoryIds: [], countries: [] }, fetchFn);
+    assert.deepEqual(capturedBody, { name: "New Name" });
+  });
+
+  it("omits total_budget_limit/max_daily_budget/total_impressions/max_daily_impressions when given 0, instead of a value below TF's minimum", async () => {
+    // Confirmed live (400): "total budget limit should be >= 2000" / "total impressions should be
+    // >= 1000". The edit form sends 0 for a blank ("unlimited") field — treat 0 the same as
+    // undefined ("don't touch this field") rather than passing it through literally.
+    let capturedBody: Record<string, unknown> | undefined;
+    const fetchFn: TfFetch = async (input, init) => {
+      capturedBody = JSON.parse(String(init?.body));
+      return new Response("", { status: 200 });
+    };
+    await updateTrafficFactoryCampaign(
+      "session",
+      123,
+      { name: "New Name", maxDailyBudget: 0, totalBudgetLimit: 0, totalImpressions: 0, maxDailyImpressions: 0 },
+      fetchFn
+    );
+    assert.deepEqual(capturedBody, { name: "New Name" });
+  });
+
   it("parses flat campaign fields from the plain call and sibling collections from the detailed call, converting cents to dollars and ISO3 countries back to ISO2", async () => {
     const calls: string[] = [];
     const fetchFn: TfFetch = async (input) => {

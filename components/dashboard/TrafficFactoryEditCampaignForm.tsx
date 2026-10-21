@@ -112,9 +112,22 @@ export function TrafficFactoryEditCampaignForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError(null);
 
+    const countryList = countries
+      .split(",")
+      .map((c) => c.trim().toUpperCase())
+      .filter(Boolean);
+    if (countryList.length === 0) {
+      setError("Negara target wajib diisi minimal 1 — Traffic Factory nggak terima campaign tanpa negara.");
+      return;
+    }
+    if (categoryIds.size === 0) {
+      setError("Kategori wajib dipilih minimal 1 — Traffic Factory nggak terima campaign tanpa kategori.");
+      return;
+    }
+
+    setLoading(true);
     try {
       await updateTrafficFactoryCampaignAction(campaignId, {
         name,
@@ -123,10 +136,7 @@ export function TrafficFactoryEditCampaignForm({
         price: Number(price),
         maxDailyBudget: maxDailyBudget ? Number(maxDailyBudget) : 0,
         totalBudgetLimit: totalBudgetLimit ? Number(totalBudgetLimit) : 0,
-        countries: countries
-          .split(",")
-          .map((c) => c.trim().toUpperCase())
-          .filter(Boolean),
+        countries: countryList,
         categoryIds: [...categoryIds],
         deviceIds: [...deviceIds],
         browserIds: [...browserIds],
@@ -359,8 +369,9 @@ export function TrafficFactoryEditCampaignForm({
           placeholder="Cari carrier..."
         />
         <p className="text-xs text-muted">
-          Kosongin negara/kategori/device/browser/OS/bahasa/carrier berarti nggak ada filter (semua ditargetkan). Retargeting, zona
-          premium, dan goal optimization belum ada di sini — atur manual lewat website Traffic Factory kalau perlu.
+          Negara dan kategori wajib minimal 1 — nggak bisa dikosongin (Traffic Factory nolak kalau dikosongin). Device/browser/OS/bahasa/carrier
+          boleh dikosongin, artinya nggak ada filter (semua ditargetkan). Retargeting, zona premium, dan goal optimization belum ada di sini —
+          atur manual lewat website Traffic Factory kalau perlu.
         </p>
       </div>
 
