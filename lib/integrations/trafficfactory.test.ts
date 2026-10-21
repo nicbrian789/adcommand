@@ -34,6 +34,7 @@ import {
   unwrapTrafficFactoryStatisticsPayload,
   updateTrafficFactoryCampaign,
   uploadTrafficFactoryLibraryFile,
+  uploadTrafficFactoryLibraryUrl,
   TF_BALANCE_KEYS,
   TF_IMPRESSION_KEYS,
   TF_SPEND_KEYS,
@@ -807,7 +808,10 @@ describe("Traffic Factory creative upload (Library -> Variation, two separate ca
     assert.equal(result.url, "https://cdn.example/99.png");
   });
 
-  it("creates a variation referencing the uploaded Library file id, not a raw file upload", async () => {
+  it("creates a variation referencing the uploaded Library file AND Library url ids, never a raw file or durl string", async () => {
+    // Confirmed from a live 400 ("Parameter durl not allowed in img_banner") that at least some
+    // media storage templates reject a raw durl string — the landing URL must go through
+    // /library/url first too, same as the image goes through /library/file.
     let capturedForm: FormData | undefined;
     const fetchFn: TfFetch = async (input, init) => {
       const url = new URL(String(input));
@@ -816,10 +820,24 @@ describe("Traffic Factory creative upload (Library -> Variation, two separate ca
       capturedForm = init?.body as FormData;
       return new Response("", { status: 200 });
     };
-    await createTrafficFactoryVariation("session", 42, { idLibraryFile: 99, durl: "https://example.com/offer" }, fetchFn);
+    await createTrafficFactoryVariation("session", 42, { idLibraryFile: 99, idLibraryUrl: 7 }, fetchFn);
     assert.equal(capturedForm?.get("id_library_file"), "99");
-    assert.equal(capturedForm?.get("durl"), "https://example.com/offer");
+    assert.equal(capturedForm?.get("id_library_url"), "7");
+    assert.equal(capturedForm?.get("durl"), null);
     assert.equal(capturedForm?.get("file"), null); // the file itself was never part of this call
+  });
+
+  it("registers a landing URL in the Library via a JSON POST, returning its id", async () => {
+    const fetchFn: TfFetch = async (input, init) => {
+      const url = new URL(String(input));
+      assert.match(url.pathname, /\/library\/url$/);
+      assert.equal(init?.method, "POST");
+      assert.deepEqual(JSON.parse(String(init?.body)), { url: "https://example.com/offer" });
+      return jsonResponse({ id: 7, url: "https://example.com/offer", status: 1 });
+    };
+    const result = await uploadTrafficFactoryLibraryUrl("session", "https://example.com/offer", fetchFn);
+    assert.equal(result.id, 7);
+    assert.equal(result.url, "https://example.com/offer");
   });
 
   it("lists variations, reading imgurl/durl/idvariation per the live VariationDetails schema", async () => {

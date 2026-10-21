@@ -1175,6 +1175,41 @@ export async function uploadTrafficFactoryLibraryFile(
   return { id, type: pickFirstString(row, ["type"]) ?? "image", url: pickFirstString(row, ["url"]) ?? "" };
 }
 
+/**
+ * Landing URLs go through the Library too, same as images — confirmed from a live 400
+ * ("Parameter durl not allowed in img_banner"): the raw `durl` string field on
+ * POST /campaigns/{id}/variation is rejected for at least the img_banner media storage
+ * template, and /library/url exists as a direct JSON-body counterpart to /library/file
+ * (POST {url} -> {id, url, status}) for exactly this purpose.
+ */
+export async function uploadTrafficFactoryLibraryUrl(
+  sessionToken: string,
+  url: string,
+  fetchFn: TfFetch = fetch
+): Promise<{ id: number; url: string }> {
+  const res = await fetchFn(`${TRAFFIC_FACTORY_BASE_URL}/library/url`, {
+    method: "POST",
+    headers: { ...authHeaders(sessionToken), "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throwTrafficFactoryHttpError("/library/url", res.status, text);
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Respons /library/url Traffic Factory bukan JSON: ${text.slice(0, 300)}`);
+  }
+  const row = asRecord(data);
+  const id = row ? pickFirstNumber(row, ["id"]) : null;
+  if (!row || id === null) {
+    throw new Error(`Respons /library/url Traffic Factory tidak terduga: ${text.slice(0, 300)}`);
+  }
+  return { id, url: pickFirstString(row, ["url"]) ?? url };
+}
+
 export type TrafficFactoryVariation = {
   id: number;
   name: string | null;
@@ -1219,7 +1254,7 @@ export async function listTrafficFactoryVariations(
 
 export type CreateTrafficFactoryVariationInput = {
   idLibraryFile: number;
-  durl: string;
+  idLibraryUrl: number;
   name?: string;
   brand?: string;
 };
@@ -1232,7 +1267,7 @@ export async function createTrafficFactoryVariation(
 ): Promise<void> {
   const form = new FormData();
   form.append("id_library_file", String(input.idLibraryFile));
-  form.append("durl", input.durl);
+  form.append("id_library_url", String(input.idLibraryUrl));
   if (input.name) form.append("name", input.name);
   if (input.brand) form.append("brand", input.brand);
 

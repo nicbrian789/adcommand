@@ -12,6 +12,7 @@ import {
   getTrafficFactorySessionToken,
   createTrafficFactoryCampaign,
   uploadTrafficFactoryLibraryFile,
+  uploadTrafficFactoryLibraryUrl,
   createTrafficFactoryVariation,
 } from "@/lib/integrations/trafficfactory";
 
@@ -359,6 +360,7 @@ export async function createTrafficFactoryVariationAction(
     if (keyError || !apiKey) throw new Error(keyError?.message ?? "API key belum tersimpan.");
 
     const sessionToken = await getTrafficFactorySessionToken(apiKey);
+    const libraryUrl = await uploadTrafficFactoryLibraryUrl(sessionToken, input.durl.trim());
 
     let created = 0;
     for (const file of validImages) {
@@ -367,7 +369,7 @@ export async function createTrafficFactoryVariationAction(
       });
       await createTrafficFactoryVariation(sessionToken, input.campaignId, {
         idLibraryFile: libraryFile.id,
-        durl: input.durl.trim(),
+        idLibraryUrl: libraryUrl.id,
       });
       created += 1;
     }

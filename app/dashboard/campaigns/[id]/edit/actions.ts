@@ -17,6 +17,7 @@ import {
   updateTrafficFactoryCampaign,
   listTrafficFactoryVariations,
   uploadTrafficFactoryLibraryFile,
+  uploadTrafficFactoryLibraryUrl,
   createTrafficFactoryVariation,
   deleteTrafficFactoryVariation,
   type TrafficFactoryVariation,
@@ -248,11 +249,12 @@ export async function addTrafficFactoryVariationAction(
     if (validImages.length === 0) throw new Error("Pilih minimal 1 gambar.");
 
     const { sessionToken, externalId } = await resolveTrafficFactoryCampaign(campaignId);
+    const libraryUrl = await uploadTrafficFactoryLibraryUrl(sessionToken, input.durl.trim());
 
     let created = 0;
     for (const file of validImages) {
       const libraryFile = await uploadTrafficFactoryLibraryFile(sessionToken, file);
-      await createTrafficFactoryVariation(sessionToken, externalId, { idLibraryFile: libraryFile.id, durl: input.durl.trim() });
+      await createTrafficFactoryVariation(sessionToken, externalId, { idLibraryFile: libraryFile.id, idLibraryUrl: libraryUrl.id });
       created += 1;
     }
 
