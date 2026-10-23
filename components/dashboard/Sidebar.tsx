@@ -75,7 +75,7 @@ export function Sidebar({
         <div className="font-semibold text-lg tracking-wide">
           AD<span className="text-accent">COMMAND</span>
         </div>
-        <div className="text-xs text-muted">Advertising Command Center</div>
+        <div className="text-xs text-muted whitespace-nowrap">Advertising Command Center</div>
       </div>
     </Link>
   );
