@@ -72,10 +72,10 @@ export function Sidebar({
         </svg>
       </div>
       <div className="leading-tight">
-        <div className="font-semibold text-sm tracking-wide">
+        <div className="font-semibold text-lg tracking-wide">
           AD<span className="text-accent">COMMAND</span>
         </div>
-        <div className="text-[10px] text-muted">Advertising Command Center</div>
+        <div className="text-xs text-muted">Advertising Command Center</div>
       </div>
     </Link>
   );
@@ -91,7 +91,7 @@ export function Sidebar({
         >
           <Menu size={18} />
         </button>
-        <Link href="/dashboard" className="font-semibold text-sm tracking-wide">
+        <Link href="/dashboard" className="font-semibold text-base tracking-wide">
           AD<span className="text-accent">COMMAND</span>
         </Link>
       </div>
