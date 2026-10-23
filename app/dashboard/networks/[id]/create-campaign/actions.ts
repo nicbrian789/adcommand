@@ -15,6 +15,7 @@ import {
   uploadTrafficFactoryLibraryUrl,
   createTrafficFactoryVariation,
 } from "@/lib/integrations/trafficfactory";
+import { createAdsterraCampaignRequest, type CreateAdsterraCampaignInput } from "@/lib/integrations/adsterra";
 
 export async function createTrafficStarsCampaignAction(
   networkId: string,
@@ -379,6 +380,126 @@ export async function createTrafficFactoryVariationAction(
   } catch (err) {
     console.error("createTrafficFactoryVariationAction error:", err);
     const message = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga saat upload creative.";
+    throw new Error(message);
+  }
+}
+
+export async function createAdsterraCampaignAction(
+  networkId: string,
+  input: {
+    name: string;
+    deviceFormat: ("desktop" | "mobile" | "tablet")[];
+    trafficType: "All" | "Adult" | "Mainstream";
+    connectionType: "All" | "3G" | "Wi-Fi";
+    landingUrl: string;
+    landingPreviews: string[];
+    bids: { countryId: number; price: number }[];
+    startOption: 1 | 2 | 3;
+    date: string;
+    time: string;
+    totalBudgetLimit: number;
+    dailyBudgetLimit: number;
+    hourlyBudgetLimit: number;
+    totalImpressionsLimit: number;
+    dailyImpressionsLimit: number;
+    hourlyImpressionsLimit: number;
+    frequencyCappingAmount: number;
+    frequencyCappingPeriod: number;
+    frequencyCappingPeriodType: 1 | 2 | 0;
+    isSmartCpm: boolean;
+    isEvenlyDistributed: boolean;
+    languageInclude: boolean;
+    languageIds: number[];
+    dayOfWeekInclude: boolean;
+    days: number[];
+    timeRanges: { include: boolean; from: number; to: number }[];
+    ipList: string[];
+    cpaGoal: { conditionValue: number; conditionOperator: number; optimizationParameter: number; gross: number } | null;
+  }
+): Promise<{ campaignRequestId: string }> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Sesi kamu sudah habis. Silakan masuk lagi.");
+
+    const { data: network, error: networkError } = await supabase
+      .from("ad_networks")
+      .select("id, name, workspace_id, provider")
+      .eq("id", networkId)
+      .maybeSingle();
+    if (networkError || !network) throw new Error("Network tidak ditemukan.");
+    if (network.provider !== "adsterra") throw new Error("Network ini bukan Adsterra.");
+
+    if (!input.name.trim()) throw new Error("Nama campaign wajib diisi.");
+    if (input.deviceFormat.length === 0) throw new Error("Pilih minimal 1 device target.");
+    if (!input.landingUrl.trim() || !/^https?:\/\//i.test(input.landingUrl.trim())) {
+      throw new Error("Landing URL wajib diisi, diawali http:// atau https://");
+    }
+    if (input.bids.length === 0) throw new Error("Pilih minimal 1 negara & harga bid.");
+    if (input.bids.some((b) => !b.price || b.price <= 0)) throw new Error("Harga bid tiap negara harus lebih dari 0.");
+    if (input.startOption === 2 && (!input.date || !input.time)) {
+      throw new Error("Tanggal & jam mulai wajib diisi kalau pilih Jadwal.");
+    }
+
+    const { data: apiKey, error: keyError } = await supabase.rpc("get_network_api_key", { p_network_id: networkId });
+    if (keyError || !apiKey) throw new Error(keyError?.message ?? "API key belum tersimpan.");
+
+    const body: CreateAdsterraCampaignInput = {
+      name: input.name.trim(),
+      deviceFormat: input.deviceFormat,
+      trafficType: input.trafficType,
+      connectionType: input.connectionType,
+      landingUrl: input.landingUrl.trim(),
+      landingPreviews: input.landingPreviews.length > 0 ? input.landingPreviews : undefined,
+      bids: input.bids,
+      startOption: input.startOption,
+      date: input.startOption === 2 ? input.date : undefined,
+      time: input.startOption === 2 ? input.time : undefined,
+      totalBudgetLimit: input.totalBudgetLimit || undefined,
+      dailyBudgetLimit: input.dailyBudgetLimit || undefined,
+      hourlyBudgetLimit: input.hourlyBudgetLimit || undefined,
+      totalImpressionsLimit: input.totalImpressionsLimit || undefined,
+      dailyImpressionsLimit: input.dailyImpressionsLimit || undefined,
+      hourlyImpressionsLimit: input.hourlyImpressionsLimit || undefined,
+      frequencyCappingAmount: input.frequencyCappingAmount || undefined,
+      frequencyCappingPeriod: input.frequencyCappingPeriod || undefined,
+      frequencyCappingPeriodType: input.frequencyCappingPeriodType || undefined,
+      isSmartCpm: input.isSmartCpm || undefined,
+      isEvenlyDistributed: input.isEvenlyDistributed || undefined,
+      languageTargets: input.languageIds.length > 0 ? { include: input.languageInclude, languages: input.languageIds } : undefined,
+      dayOfWeekTargets: input.days.length > 0 ? { include: input.dayOfWeekInclude, days: input.days } : undefined,
+      timeRangeTargets: input.timeRanges.length > 0 ? input.timeRanges : undefined,
+      ipList: input.ipList.length > 0 ? input.ipList : undefined,
+      cpaGoal: input.cpaGoal ?? undefined,
+    };
+
+    const result = await createAdsterraCampaignRequest(apiKey, body);
+
+    const { error: insertError } = await supabase.from("campaigns").insert({
+      workspace_id: network.workspace_id,
+      network_id: network.id,
+      external_id: result.campaignRequestId,
+      name: input.name.trim(),
+      status: "Pending Review",
+    });
+    if (insertError) {
+      console.error("Gagal simpan campaign request ke database:", insertError.message);
+    }
+
+    try {
+      revalidatePath("/dashboard/networks");
+      revalidatePath("/dashboard/campaigns");
+      revalidatePath("/dashboard");
+    } catch (revalidateErr) {
+      console.error("revalidatePath gagal:", revalidateErr);
+    }
+
+    return result;
+  } catch (err) {
+    console.error("createAdsterraCampaignAction error:", err);
+    const message = err instanceof Error ? err.message : "Terjadi kesalahan tak terduga saat bikin campaign.";
     throw new Error(message);
   }
 }

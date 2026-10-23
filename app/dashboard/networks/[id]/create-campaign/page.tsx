@@ -15,8 +15,10 @@ import {
   getTrafficFactoryCarriers,
   getTrafficFactoryTimezones,
 } from "@/lib/integrations/trafficfactory";
+import { getAdsterraCountries, getAdsterraLanguages } from "@/lib/integrations/adsterra";
 import { TrafficStarsCreateCampaignForm } from "@/components/dashboard/TrafficStarsCreateCampaignForm";
 import { TrafficFactoryCreateCampaignForm } from "@/components/dashboard/TrafficFactoryCreateCampaignForm";
+import { AdsterraCreateCampaignForm } from "@/components/dashboard/AdsterraCreateCampaignForm";
 
 export default async function CreateCampaignPage({ params }: { params: Promise<{ id: string }> }) {
   if (!isSupabaseConfigured) {
@@ -48,14 +50,14 @@ export default async function CreateCampaignPage({ params }: { params: Promise<{
     </Link>
   );
 
-  if (network.provider !== "trafficstars" && network.provider !== "traffic_factory") {
+  if (network.provider !== "trafficstars" && network.provider !== "traffic_factory" && network.provider !== "adsterra") {
     return (
       <div className="space-y-4">
         {backLink}
         <div className="rounded-xl border border-border bg-surface p-10 text-center text-muted flex flex-col items-center gap-2">
           <AlertTriangle size={24} />
           <p className="font-medium text-foreground">Belum tersedia buat {network.name}</p>
-          <p className="text-sm">Create Campaign baru jalan buat TrafficStars & Traffic Factory sekarang.</p>
+          <p className="text-sm">Create Campaign baru jalan buat TrafficStars, Traffic Factory & Adsterra sekarang.</p>
         </div>
       </div>
     );
@@ -120,6 +122,39 @@ export default async function CreateCampaignPage({ params }: { params: Promise<{
           carriers={carriers}
           timezones={timezones}
         />
+      </div>
+    );
+  }
+
+  if (network.provider === "adsterra") {
+    let adsterraCountries, adsterraLanguages;
+    try {
+      [adsterraCountries, adsterraLanguages] = await Promise.all([
+        getAdsterraCountries(apiKey),
+        getAdsterraLanguages(apiKey),
+      ]);
+    } catch (err) {
+      return (
+        <div className="space-y-4">
+          {backLink}
+          <div className="rounded-xl border border-danger/30 bg-danger/10 p-10 text-center text-danger">
+            Gagal ambil daftar negara/bahasa: {err instanceof Error ? err.message : "error tak terduga"}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-5">
+        {backLink}
+        <div>
+          <h1 className="text-lg font-semibold">Buat Campaign Baru — {network.name}</h1>
+          <p className="text-sm text-muted">
+            Campaign baru masuk status <strong>Pending Review</strong> dulu — direview tim moderasi Adsterra sebelum aktif beneran.
+          </p>
+        </div>
+
+        <AdsterraCreateCampaignForm networkId={network.id} countries={adsterraCountries} languages={adsterraLanguages} />
       </div>
     );
   }

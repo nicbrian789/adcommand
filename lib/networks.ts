@@ -19,7 +19,7 @@ export function isSyncSupported(provider: string | null) {
   return NETWORK_TYPES.find((t) => t.value === provider)?.syncSupported ?? false;
 }
 
-const CREATE_CAMPAIGN_SUPPORTED = ["trafficstars", "traffic_factory"];
+const CREATE_CAMPAIGN_SUPPORTED = ["trafficstars", "traffic_factory", "adsterra"];
 const MANAGE_CAMPAIGN_SUPPORTED = ["trafficstars", "traffic_factory"];
 const DELETE_CAMPAIGN_SUPPORTED = ["traffic_factory"];
 

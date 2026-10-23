@@ -7,6 +7,7 @@ import { DateRangeFilter } from "@/components/dashboard/DateRangeFilter";
 import { MemberFilterTabs } from "@/components/dashboard/MemberFilterTabs";
 import { CampaignPauseButton } from "@/components/dashboard/CampaignPauseButton";
 import { CampaignDeleteButton } from "@/components/dashboard/CampaignDeleteButton";
+import { AdsterraCheckStatusButton } from "@/components/dashboard/AdsterraCheckStatusButton";
 import { resolveDateRange } from "@/lib/dateRange";
 import { isDeleteCampaignSupported, isManageCampaignSupported } from "@/lib/networks";
 import { Megaphone, AlertTriangle, Pencil } from "lucide-react";
@@ -305,6 +306,10 @@ export default async function CampaignsPage({
                               </Link>
                               <CampaignPauseButton campaignId={c.id} status={c.status} />
                               {canDelete ? <CampaignDeleteButton campaignId={c.id} campaignName={c.name} /> : null}
+                            </div>
+                          ) : provider === "adsterra" && c.status === "Pending Review" ? (
+                            <div className="flex justify-end">
+                              <AdsterraCheckStatusButton campaignId={c.id} />
                             </div>
                           ) : null}
                         </td>
