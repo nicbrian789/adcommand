@@ -15,7 +15,66 @@ import {
   uploadTrafficFactoryLibraryUrl,
   createTrafficFactoryVariation,
 } from "@/lib/integrations/trafficfactory";
-import { createAdsterraCampaignRequest, type CreateAdsterraCampaignInput } from "@/lib/integrations/adsterra";
+import {
+  createAdsterraCampaignRequest,
+  getAdsterraRegions,
+  getAdsterraCities,
+  getAdsterraCarriers,
+  getAdsterraBrowserVersions,
+  getAdsterraOperatingSystemVersions,
+  type CreateAdsterraCampaignInput,
+  type AdsterraDictItem,
+} from "@/lib/integrations/adsterra";
+
+/** Shared by the lazy dictionary lookups below — just needs the network's Adsterra API key, none
+ * of the campaign-ownership checks createAdsterraCampaignAction does (these are read-only). */
+async function resolveAdsterraApiKey(networkId: string): Promise<string> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sesi kamu sudah habis. Silakan masuk lagi.");
+
+  const { data: network, error: networkError } = await supabase
+    .from("ad_networks")
+    .select("id, provider")
+    .eq("id", networkId)
+    .maybeSingle();
+  if (networkError || !network || network.provider !== "adsterra") throw new Error("Network Adsterra tidak ditemukan.");
+
+  const { data: apiKey, error: keyError } = await supabase.rpc("get_network_api_key", { p_network_id: networkId });
+  if (keyError || !apiKey) throw new Error(keyError?.message ?? "API key belum tersimpan.");
+  return apiKey as string;
+}
+
+export async function getAdsterraRegionsAction(networkId: string, countryId: number): Promise<AdsterraDictItem[]> {
+  const apiKey = await resolveAdsterraApiKey(networkId);
+  return getAdsterraRegions(apiKey, countryId);
+}
+
+export async function getAdsterraCitiesAction(
+  networkId: string,
+  countryId: number,
+  regionId: number
+): Promise<AdsterraDictItem[]> {
+  const apiKey = await resolveAdsterraApiKey(networkId);
+  return getAdsterraCities(apiKey, countryId, regionId);
+}
+
+export async function getAdsterraCarriersAction(networkId: string, countryId: number): Promise<AdsterraDictItem[]> {
+  const apiKey = await resolveAdsterraApiKey(networkId);
+  return getAdsterraCarriers(apiKey, countryId);
+}
+
+export async function getAdsterraBrowserVersionsAction(networkId: string, browserId: number): Promise<AdsterraDictItem[]> {
+  const apiKey = await resolveAdsterraApiKey(networkId);
+  return getAdsterraBrowserVersions(apiKey, browserId);
+}
+
+export async function getAdsterraOsVersionsAction(networkId: string, osId: number): Promise<AdsterraDictItem[]> {
+  const apiKey = await resolveAdsterraApiKey(networkId);
+  return getAdsterraOperatingSystemVersions(apiKey, osId);
+}
 
 export async function createTrafficStarsCampaignAction(
   networkId: string,
@@ -415,6 +474,10 @@ export async function createAdsterraCampaignAction(
     timeRanges: { include: boolean; from: number; to: number }[];
     ipList: string[];
     cpaGoal: { conditionValue: number; conditionOperator: number; optimizationParameter: number; gross: number } | null;
+    browserTargets: { browser: number; rule: number; version: number; include: boolean }[];
+    osTargets: { os: number; rule: number; version: number; include: boolean }[];
+    locationTargets: { countryId: number; regionId: number; cityId: number; include: boolean }[];
+    carrierTargets: { include: boolean; country: number; carriers: { id: number; name: string }[] }[];
   }
 ): Promise<{ campaignRequestId: string }> {
   try {
@@ -473,6 +536,10 @@ export async function createAdsterraCampaignAction(
       timeRangeTargets: input.timeRanges.length > 0 ? input.timeRanges : undefined,
       ipList: input.ipList.length > 0 ? input.ipList : undefined,
       cpaGoal: input.cpaGoal ?? undefined,
+      browserTargets: input.browserTargets.length > 0 ? input.browserTargets : undefined,
+      osTargets: input.osTargets.length > 0 ? input.osTargets : undefined,
+      locationTargets: input.locationTargets.length > 0 ? input.locationTargets : undefined,
+      carrierTargets: input.carrierTargets.length > 0 ? input.carrierTargets : undefined,
     };
 
     const result = await createAdsterraCampaignRequest(apiKey, body);

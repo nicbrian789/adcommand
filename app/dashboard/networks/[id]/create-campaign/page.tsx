@@ -15,7 +15,7 @@ import {
   getTrafficFactoryCarriers,
   getTrafficFactoryTimezones,
 } from "@/lib/integrations/trafficfactory";
-import { getAdsterraCountries, getAdsterraLanguages } from "@/lib/integrations/adsterra";
+import { getAdsterraCountries, getAdsterraLanguages, getAdsterraBrowsers, getAdsterraOperatingSystems } from "@/lib/integrations/adsterra";
 import { TrafficStarsCreateCampaignForm } from "@/components/dashboard/TrafficStarsCreateCampaignForm";
 import { TrafficFactoryCreateCampaignForm } from "@/components/dashboard/TrafficFactoryCreateCampaignForm";
 import { AdsterraCreateCampaignForm } from "@/components/dashboard/AdsterraCreateCampaignForm";
@@ -127,18 +127,20 @@ export default async function CreateCampaignPage({ params }: { params: Promise<{
   }
 
   if (network.provider === "adsterra") {
-    let adsterraCountries, adsterraLanguages;
+    let adsterraCountries, adsterraLanguages, adsterraBrowsers, adsterraOperatingSystems;
     try {
-      [adsterraCountries, adsterraLanguages] = await Promise.all([
+      [adsterraCountries, adsterraLanguages, adsterraBrowsers, adsterraOperatingSystems] = await Promise.all([
         getAdsterraCountries(apiKey),
         getAdsterraLanguages(apiKey),
+        getAdsterraBrowsers(apiKey),
+        getAdsterraOperatingSystems(apiKey),
       ]);
     } catch (err) {
       return (
         <div className="space-y-4">
           {backLink}
           <div className="rounded-xl border border-danger/30 bg-danger/10 p-10 text-center text-danger">
-            Gagal ambil daftar negara/bahasa: {err instanceof Error ? err.message : "error tak terduga"}
+            Gagal ambil daftar negara/bahasa/browser/OS: {err instanceof Error ? err.message : "error tak terduga"}
           </div>
         </div>
       );
@@ -154,7 +156,13 @@ export default async function CreateCampaignPage({ params }: { params: Promise<{
           </p>
         </div>
 
-        <AdsterraCreateCampaignForm networkId={network.id} countries={adsterraCountries} languages={adsterraLanguages} />
+        <AdsterraCreateCampaignForm
+          networkId={network.id}
+          countries={adsterraCountries}
+          languages={adsterraLanguages}
+          browsers={adsterraBrowsers}
+          operatingSystems={adsterraOperatingSystems}
+        />
       </div>
     );
   }

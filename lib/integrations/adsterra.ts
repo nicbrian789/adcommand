@@ -188,20 +188,30 @@ export async function getAdsterraBrowsers(apiKey: string, fetchFn: AdsterraFetch
     .filter((x): x is AdsterraBrowser => x !== null);
 }
 
-/** 1/2/3 inferred to line up with the create/update device_format order (desktop/mobile/tablet) —
- * the spec documents the enum values but not their meaning, so this is a judgment call, not
- * confirmed. Flag to the user if Windows/Mac OS X ever show up under the wrong device tab. */
-export async function getAdsterraOperatingSystems(
+/** device_format (1/2/3) is an optional filter on this endpoint — confirmed from the spec (not in
+ * its `required` list), so omitting it returns the full unfiltered OS list. Doing that rather than
+ * guessing which of 1/2/3 means desktop/mobile/tablet (undocumented) avoids silently hiding an OS
+ * under the wrong tab. */
+export async function getAdsterraOperatingSystems(apiKey: string, fetchFn: AdsterraFetch = fetch): Promise<AdsterraDictItem[]> {
+  const data = await adsterraRequest(apiKey, "/dictionary/operating-systems.json", undefined, fetchFn);
+  return parseDictItems(data);
+}
+
+export async function getAdsterraBrowserVersions(
   apiKey: string,
-  deviceFormat: 1 | 2 | 3,
+  browserId: number,
   fetchFn: AdsterraFetch = fetch
 ): Promise<AdsterraDictItem[]> {
-  const data = await adsterraRequest(
-    apiKey,
-    `/dictionary/operating-systems.json?device_format=${deviceFormat}`,
-    undefined,
-    fetchFn
-  );
+  const data = await adsterraRequest(apiKey, `/dictionary/browser/${browserId}/versions.json`, undefined, fetchFn);
+  return parseDictItems(data);
+}
+
+export async function getAdsterraOperatingSystemVersions(
+  apiKey: string,
+  operatingSystemId: number,
+  fetchFn: AdsterraFetch = fetch
+): Promise<AdsterraDictItem[]> {
+  const data = await adsterraRequest(apiKey, `/dictionary/operating-system/${operatingSystemId}/versions.json`, undefined, fetchFn);
   return parseDictItems(data);
 }
 

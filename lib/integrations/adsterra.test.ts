@@ -11,6 +11,8 @@ import {
   getAdsterraCountries,
   getAdsterraLanguages,
   getAdsterraOperatingSystems,
+  getAdsterraOperatingSystemVersions,
+  getAdsterraBrowserVersions,
   getAdsterraPricingSettings,
   getAdsterraRegions,
   getAdsterraStats,
@@ -105,13 +107,30 @@ describe("Adsterra dictionaries", () => {
     assert.deepEqual(await getAdsterraBrowsers("key", fetchFn), [{ id: 5, name: "Chrome", deviceFormats: [1] }]);
   });
 
-  it("fetches operating systems filtered by the numeric device_format", async () => {
+  it("fetches the full unfiltered OS list (device_format omitted rather than guessing the 1/2/3 mapping)", async () => {
     const fetchFn: AdsterraFetch = async (input) => {
       const url = new URL(String(input));
-      assert.equal(url.searchParams.get("device_format"), "2");
+      assert.match(url.pathname, /\/dictionary\/operating-systems\.json$/);
+      assert.equal(url.searchParams.has("device_format"), false);
       return jsonResponse({ items: [{ id: 12, name: "Android" }] });
     };
-    assert.deepEqual(await getAdsterraOperatingSystems("key", 2, fetchFn), [{ id: 12, name: "Android" }]);
+    assert.deepEqual(await getAdsterraOperatingSystems("key", fetchFn), [{ id: 12, name: "Android" }]);
+  });
+
+  it("fetches versions scoped to a browser id", async () => {
+    const fetchFn: AdsterraFetch = async (input) => {
+      assert.match(String(input), /\/dictionary\/browser\/5\/versions\.json$/);
+      return jsonResponse({ items: [{ id: 145, name: "6.0" }] });
+    };
+    assert.deepEqual(await getAdsterraBrowserVersions("key", 5, fetchFn), [{ id: 145, name: "6.0" }]);
+  });
+
+  it("fetches versions scoped to an operating system id", async () => {
+    const fetchFn: AdsterraFetch = async (input) => {
+      assert.match(String(input), /\/dictionary\/operating-system\/4\/versions\.json$/);
+      return jsonResponse({ items: [{ id: 11, name: "7" }] });
+    };
+    assert.deepEqual(await getAdsterraOperatingSystemVersions("key", 4, fetchFn), [{ id: 11, name: "7" }]);
   });
 });
 

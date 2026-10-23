@@ -3,10 +3,38 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, CheckCircle2, Plus, Trash2 } from "lucide-react";
-import { createAdsterraCampaignAction } from "@/app/dashboard/networks/[id]/create-campaign/actions";
+import {
+  createAdsterraCampaignAction,
+  getAdsterraBrowserVersionsAction,
+  getAdsterraOsVersionsAction,
+  getAdsterraRegionsAction,
+  getAdsterraCitiesAction,
+  getAdsterraCarriersAction,
+} from "@/app/dashboard/networks/[id]/create-campaign/actions";
 import { MultiSelectChecklist } from "@/components/dashboard/MultiSelectChecklist";
 import { FilePreviewThumbnails } from "@/components/dashboard/FilePreviewThumbnails";
-import type { AdsterraCountry, AdsterraDictItem } from "@/lib/integrations/adsterra";
+import type { AdsterraCountry, AdsterraDictItem, AdsterraBrowser } from "@/lib/integrations/adsterra";
+
+const RULE_OPTIONS = [
+  { value: 0, label: "Sama dengan (=)" },
+  { value: 1, label: "Lebih besar (>)" },
+  { value: 2, label: "Lebih besar sama dengan (>=)" },
+  { value: 3, label: "Lebih kecil (<)" },
+  { value: 4, label: "Lebih kecil sama dengan (<=)" },
+];
+
+type BrowserTarget = { browser: number; browserName: string; rule: number; version: number; versionName: string; include: boolean };
+type OsTarget = { os: number; osName: string; rule: number; version: number; versionName: string; include: boolean };
+type LocationTarget = {
+  countryId: number;
+  countryName: string;
+  regionId: number;
+  regionName: string;
+  cityId: number;
+  cityName: string;
+  include: boolean;
+};
+type CarrierTargetGroup = { country: number; countryName: string; carriers: { id: number; name: string }[]; include: boolean };
 
 const inputClass =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent";
@@ -42,10 +70,14 @@ export function AdsterraCreateCampaignForm({
   networkId,
   countries,
   languages,
+  browsers,
+  operatingSystems,
 }: {
   networkId: string;
   countries: AdsterraCountry[];
   languages: AdsterraDictItem[];
+  browsers: AdsterraBrowser[];
+  operatingSystems: AdsterraDictItem[];
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -93,6 +125,39 @@ export function AdsterraCreateCampaignForm({
   const [cpaOptimizationParameter, setCpaOptimizationParameter] = useState(1);
   const [cpaGross, setCpaGross] = useState("");
 
+  const [browserTargets, setBrowserTargets] = useState<BrowserTarget[]>([]);
+  const [browserDraftId, setBrowserDraftId] = useState<number | "">("");
+  const [browserDraftVersions, setBrowserDraftVersions] = useState<AdsterraDictItem[]>([]);
+  const [browserDraftVersionId, setBrowserDraftVersionId] = useState<number | "">("");
+  const [browserDraftRule, setBrowserDraftRule] = useState(0);
+  const [browserDraftInclude, setBrowserDraftInclude] = useState(true);
+  const [browserVersionsLoading, setBrowserVersionsLoading] = useState(false);
+
+  const [osTargets, setOsTargets] = useState<OsTarget[]>([]);
+  const [osDraftId, setOsDraftId] = useState<number | "">("");
+  const [osDraftVersions, setOsDraftVersions] = useState<AdsterraDictItem[]>([]);
+  const [osDraftVersionId, setOsDraftVersionId] = useState<number | "">("");
+  const [osDraftRule, setOsDraftRule] = useState(0);
+  const [osDraftInclude, setOsDraftInclude] = useState(true);
+  const [osVersionsLoading, setOsVersionsLoading] = useState(false);
+
+  const [locationTargets, setLocationTargets] = useState<LocationTarget[]>([]);
+  const [locationDraftCountryId, setLocationDraftCountryId] = useState<number | "">("");
+  const [locationDraftRegions, setLocationDraftRegions] = useState<AdsterraDictItem[]>([]);
+  const [locationDraftRegionId, setLocationDraftRegionId] = useState<number | "">("");
+  const [locationDraftCities, setLocationDraftCities] = useState<AdsterraDictItem[]>([]);
+  const [locationDraftCityId, setLocationDraftCityId] = useState(0);
+  const [locationDraftInclude, setLocationDraftInclude] = useState(true);
+  const [locationRegionsLoading, setLocationRegionsLoading] = useState(false);
+  const [locationCitiesLoading, setLocationCitiesLoading] = useState(false);
+
+  const [carrierTargetGroups, setCarrierTargetGroups] = useState<CarrierTargetGroup[]>([]);
+  const [carrierDraftCountryId, setCarrierDraftCountryId] = useState<number | "">("");
+  const [carrierDraftOptions, setCarrierDraftOptions] = useState<AdsterraDictItem[]>([]);
+  const [carrierDraftSelected, setCarrierDraftSelected] = useState<Set<number>>(new Set());
+  const [carrierDraftInclude, setCarrierDraftInclude] = useState(true);
+  const [carrierOptionsLoading, setCarrierOptionsLoading] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ campaignRequestId: string } | null>(null);
@@ -125,6 +190,185 @@ export function AdsterraCreateCampaignForm({
 
   function removeTimeRange(index: number) {
     setTimeRanges((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleBrowserSelect(idText: string) {
+    const id = idText ? Number(idText) : "";
+    setBrowserDraftId(id);
+    setBrowserDraftVersionId("");
+    setBrowserDraftVersions([]);
+    if (id === "") return;
+    setBrowserVersionsLoading(true);
+    try {
+      const versions = await getAdsterraBrowserVersionsAction(networkId, id);
+      setBrowserDraftVersions(versions);
+      if (versions.length > 0) setBrowserDraftVersionId(versions[0].id);
+    } catch {
+      // keep the draft usable even if the version list fails to load — user can retry by reselecting
+    } finally {
+      setBrowserVersionsLoading(false);
+    }
+  }
+
+  function addBrowserTarget() {
+    if (browserDraftId === "" || browserDraftVersionId === "") return;
+    const browser = browsers.find((b) => b.id === browserDraftId);
+    const version = browserDraftVersions.find((v) => v.id === browserDraftVersionId);
+    if (!browser || !version) return;
+    setBrowserTargets((prev) => [
+      ...prev,
+      {
+        browser: browser.id,
+        browserName: browser.name,
+        rule: browserDraftRule,
+        version: version.id,
+        versionName: version.name,
+        include: browserDraftInclude,
+      },
+    ]);
+    setBrowserDraftId("");
+    setBrowserDraftVersionId("");
+    setBrowserDraftVersions([]);
+  }
+
+  function removeBrowserTarget(index: number) {
+    setBrowserTargets((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleOsSelect(idText: string) {
+    const id = idText ? Number(idText) : "";
+    setOsDraftId(id);
+    setOsDraftVersionId("");
+    setOsDraftVersions([]);
+    if (id === "") return;
+    setOsVersionsLoading(true);
+    try {
+      const versions = await getAdsterraOsVersionsAction(networkId, id);
+      setOsDraftVersions(versions);
+      if (versions.length > 0) setOsDraftVersionId(versions[0].id);
+    } catch {
+      // keep the draft usable even if the version list fails to load
+    } finally {
+      setOsVersionsLoading(false);
+    }
+  }
+
+  function addOsTarget() {
+    if (osDraftId === "" || osDraftVersionId === "") return;
+    const os = operatingSystems.find((o) => o.id === osDraftId);
+    const version = osDraftVersions.find((v) => v.id === osDraftVersionId);
+    if (!os || !version) return;
+    setOsTargets((prev) => [
+      ...prev,
+      { os: os.id, osName: os.name, rule: osDraftRule, version: version.id, versionName: version.name, include: osDraftInclude },
+    ]);
+    setOsDraftId("");
+    setOsDraftVersionId("");
+    setOsDraftVersions([]);
+  }
+
+  function removeOsTarget(index: number) {
+    setOsTargets((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleLocationCountrySelect(idText: string) {
+    const id = idText ? Number(idText) : "";
+    setLocationDraftCountryId(id);
+    setLocationDraftRegionId("");
+    setLocationDraftRegions([]);
+    setLocationDraftCities([]);
+    setLocationDraftCityId(0);
+    if (id === "") return;
+    setLocationRegionsLoading(true);
+    try {
+      const regions = await getAdsterraRegionsAction(networkId, id);
+      setLocationDraftRegions(regions);
+    } catch {
+      // keep the draft usable even if the region list fails to load
+    } finally {
+      setLocationRegionsLoading(false);
+    }
+  }
+
+  async function handleLocationRegionSelect(idText: string) {
+    const id = idText ? Number(idText) : "";
+    setLocationDraftRegionId(id);
+    setLocationDraftCities([]);
+    setLocationDraftCityId(0);
+    if (id === "" || locationDraftCountryId === "") return;
+    setLocationCitiesLoading(true);
+    try {
+      const cities = await getAdsterraCitiesAction(networkId, locationDraftCountryId, id);
+      setLocationDraftCities(cities);
+    } catch {
+      // keep the draft usable even if the city list fails to load
+    } finally {
+      setLocationCitiesLoading(false);
+    }
+  }
+
+  function addLocationTarget() {
+    if (locationDraftCountryId === "" || locationDraftRegionId === "") return;
+    const country = countries.find((c) => c.id === locationDraftCountryId);
+    const region = locationDraftRegions.find((r) => r.id === locationDraftRegionId);
+    if (!country || !region) return;
+    const city = locationDraftCities.find((c) => c.id === locationDraftCityId);
+    setLocationTargets((prev) => [
+      ...prev,
+      {
+        countryId: country.id,
+        countryName: country.name,
+        regionId: region.id,
+        regionName: region.name,
+        cityId: locationDraftCityId,
+        cityName: locationDraftCityId === 0 ? "Seluruh region" : (city?.name ?? String(locationDraftCityId)),
+        include: locationDraftInclude,
+      },
+    ]);
+    setLocationDraftCountryId("");
+    setLocationDraftRegionId("");
+    setLocationDraftRegions([]);
+    setLocationDraftCities([]);
+    setLocationDraftCityId(0);
+  }
+
+  function removeLocationTarget(index: number) {
+    setLocationTargets((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleCarrierCountrySelect(idText: string) {
+    const id = idText ? Number(idText) : "";
+    setCarrierDraftCountryId(id);
+    setCarrierDraftOptions([]);
+    setCarrierDraftSelected(new Set());
+    if (id === "") return;
+    setCarrierOptionsLoading(true);
+    try {
+      const carriers = await getAdsterraCarriersAction(networkId, id);
+      setCarrierDraftOptions(carriers);
+    } catch {
+      // keep the draft usable even if the carrier list fails to load
+    } finally {
+      setCarrierOptionsLoading(false);
+    }
+  }
+
+  function addCarrierGroup() {
+    if (carrierDraftCountryId === "" || carrierDraftSelected.size === 0) return;
+    const country = countries.find((c) => c.id === carrierDraftCountryId);
+    if (!country) return;
+    const carriers = carrierDraftOptions.filter((c) => carrierDraftSelected.has(c.id)).map((c) => ({ id: c.id, name: c.name }));
+    setCarrierTargetGroups((prev) => [
+      ...prev,
+      { country: country.id, countryName: country.name, carriers, include: carrierDraftInclude },
+    ]);
+    setCarrierDraftCountryId("");
+    setCarrierDraftOptions([]);
+    setCarrierDraftSelected(new Set());
+  }
+
+  function removeCarrierGroup(index: number) {
+    setCarrierTargetGroups((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -182,6 +426,15 @@ export function AdsterraCreateCampaignForm({
                 gross: Number(cpaGross),
               }
             : null,
+        browserTargets: browserTargets.map((t) => ({ browser: t.browser, rule: t.rule, version: t.version, include: t.include })),
+        osTargets: osTargets.map((t) => ({ os: t.os, rule: t.rule, version: t.version, include: t.include })),
+        locationTargets: locationTargets.map((t) => ({
+          countryId: t.countryId,
+          regionId: t.regionId,
+          cityId: t.cityId,
+          include: t.include,
+        })),
+        carrierTargets: carrierTargetGroups.map((g) => ({ include: g.include, country: g.country, carriers: g.carriers })),
       });
       setSuccess(result);
     } catch (err) {
@@ -490,6 +743,265 @@ export function AdsterraCreateCampaignForm({
         </button>
       </div>
 
+      <div className="border-t border-border/60 pt-4 space-y-3">
+        <h3 className="text-xs font-semibold text-muted uppercase tracking-wide">Targeting Browser (opsional)</h3>
+        {browserTargets.length > 0 ? (
+          <div className="space-y-1.5">
+            {browserTargets.map((t, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-1.5 text-xs">
+                <span>
+                  {t.include ? "Izinkan" : "Blokir"} {t.browserName} {RULE_OPTIONS.find((r) => r.value === t.rule)?.label.split(" ")[0]}{" "}
+                  v{t.versionName}
+                </span>
+                <button type="button" onClick={() => removeBrowserTarget(i)} className="text-muted hover:text-danger">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <select value={browserDraftId} onChange={(e) => handleBrowserSelect(e.target.value)} className={inputClass}>
+            <option value="">Pilih browser...</option>
+            {browsers.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={browserDraftInclude ? "include" : "exclude"}
+            onChange={(e) => setBrowserDraftInclude(e.target.value === "include")}
+            className={inputClass}
+          >
+            <option value="include">Izinkan</option>
+            <option value="exclude">Blokir</option>
+          </select>
+          <select value={browserDraftRule} onChange={(e) => setBrowserDraftRule(Number(e.target.value))} className={inputClass}>
+            {RULE_OPTIONS.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={browserDraftVersionId}
+            onChange={(e) => setBrowserDraftVersionId(e.target.value ? Number(e.target.value) : "")}
+            disabled={browserVersionsLoading || browserDraftVersions.length === 0}
+            className={inputClass}
+          >
+            <option value="">{browserVersionsLoading ? "Memuat versi..." : "Pilih versi..."}</option>
+            {browserDraftVersions.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          onClick={addBrowserTarget}
+          disabled={browserDraftId === "" || browserDraftVersionId === ""}
+          className="flex items-center gap-1.5 text-xs text-accent disabled:opacity-50"
+        >
+          <Plus size={14} />
+          Tambah target browser
+        </button>
+      </div>
+
+      <div className="border-t border-border/60 pt-4 space-y-3">
+        <h3 className="text-xs font-semibold text-muted uppercase tracking-wide">Targeting Sistem Operasi (opsional)</h3>
+        {osTargets.length > 0 ? (
+          <div className="space-y-1.5">
+            {osTargets.map((t, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-1.5 text-xs">
+                <span>
+                  {t.include ? "Izinkan" : "Blokir"} {t.osName} {RULE_OPTIONS.find((r) => r.value === t.rule)?.label.split(" ")[0]} v
+                  {t.versionName}
+                </span>
+                <button type="button" onClick={() => removeOsTarget(i)} className="text-muted hover:text-danger">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <select value={osDraftId} onChange={(e) => handleOsSelect(e.target.value)} className={inputClass}>
+            <option value="">Pilih OS...</option>
+            {operatingSystems.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={osDraftInclude ? "include" : "exclude"}
+            onChange={(e) => setOsDraftInclude(e.target.value === "include")}
+            className={inputClass}
+          >
+            <option value="include">Izinkan</option>
+            <option value="exclude">Blokir</option>
+          </select>
+          <select value={osDraftRule} onChange={(e) => setOsDraftRule(Number(e.target.value))} className={inputClass}>
+            {RULE_OPTIONS.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={osDraftVersionId}
+            onChange={(e) => setOsDraftVersionId(e.target.value ? Number(e.target.value) : "")}
+            disabled={osVersionsLoading || osDraftVersions.length === 0}
+            className={inputClass}
+          >
+            <option value="">{osVersionsLoading ? "Memuat versi..." : "Pilih versi..."}</option>
+            {osDraftVersions.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          onClick={addOsTarget}
+          disabled={osDraftId === "" || osDraftVersionId === ""}
+          className="flex items-center gap-1.5 text-xs text-accent disabled:opacity-50"
+        >
+          <Plus size={14} />
+          Tambah target OS
+        </button>
+      </div>
+
+      <div className="border-t border-border/60 pt-4 space-y-3">
+        <h3 className="text-xs font-semibold text-muted uppercase tracking-wide">Targeting Region / Kota (opsional)</h3>
+        {locationTargets.length > 0 ? (
+          <div className="space-y-1.5">
+            {locationTargets.map((t, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-1.5 text-xs">
+                <span>
+                  {t.include ? "Izinkan" : "Blokir"} {t.countryName} — {t.regionName} ({t.cityName})
+                </span>
+                <button type="button" onClick={() => removeLocationTarget(i)} className="text-muted hover:text-danger">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <select value={locationDraftCountryId} onChange={(e) => handleLocationCountrySelect(e.target.value)} className={inputClass}>
+            <option value="">Pilih negara...</option>
+            {countries.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.code})
+              </option>
+            ))}
+          </select>
+          <select
+            value={locationDraftInclude ? "include" : "exclude"}
+            onChange={(e) => setLocationDraftInclude(e.target.value === "include")}
+            className={inputClass}
+          >
+            <option value="include">Izinkan</option>
+            <option value="exclude">Blokir</option>
+          </select>
+          <select
+            value={locationDraftRegionId}
+            onChange={(e) => handleLocationRegionSelect(e.target.value)}
+            disabled={locationRegionsLoading || locationDraftRegions.length === 0}
+            className={inputClass}
+          >
+            <option value="">{locationRegionsLoading ? "Memuat region..." : "Pilih region..."}</option>
+            {locationDraftRegions.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={locationDraftCityId}
+            onChange={(e) => setLocationDraftCityId(Number(e.target.value))}
+            disabled={locationCitiesLoading || locationDraftRegionId === ""}
+            className={inputClass}
+          >
+            <option value={0}>{locationCitiesLoading ? "Memuat kota..." : "Seluruh region"}</option>
+            {locationDraftCities.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          onClick={addLocationTarget}
+          disabled={locationDraftCountryId === "" || locationDraftRegionId === ""}
+          className="flex items-center gap-1.5 text-xs text-accent disabled:opacity-50"
+        >
+          <Plus size={14} />
+          Tambah target region/kota
+        </button>
+      </div>
+
+      <div className="border-t border-border/60 pt-4 space-y-3">
+        <h3 className="text-xs font-semibold text-muted uppercase tracking-wide">Targeting Carrier (opsional)</h3>
+        {carrierTargetGroups.length > 0 ? (
+          <div className="space-y-1.5">
+            {carrierTargetGroups.map((g, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-1.5 text-xs">
+                <span>
+                  {g.include ? "Izinkan" : "Blokir"} {g.countryName}: {g.carriers.map((c) => c.name).join(", ")}
+                </span>
+                <button type="button" onClick={() => removeCarrierGroup(i)} className="text-muted hover:text-danger">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <select value={carrierDraftCountryId} onChange={(e) => handleCarrierCountrySelect(e.target.value)} className={inputClass}>
+            <option value="">Pilih negara...</option>
+            {countries.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} ({c.code})
+              </option>
+            ))}
+          </select>
+          <select
+            value={carrierDraftInclude ? "include" : "exclude"}
+            onChange={(e) => setCarrierDraftInclude(e.target.value === "include")}
+            className={inputClass}
+          >
+            <option value="include">Izinkan</option>
+            <option value="exclude">Blokir</option>
+          </select>
+        </div>
+        {carrierOptionsLoading ? (
+          <p className="text-xs text-muted">Memuat daftar carrier...</p>
+        ) : carrierDraftOptions.length > 0 ? (
+          <MultiSelectChecklist
+            label="Carrier"
+            items={carrierDraftOptions.map((c) => ({ id: c.id, label: c.name }))}
+            selected={carrierDraftSelected}
+            onChange={setCarrierDraftSelected}
+            placeholder="Cari carrier..."
+          />
+        ) : null}
+        <button
+          type="button"
+          onClick={addCarrierGroup}
+          disabled={carrierDraftCountryId === "" || carrierDraftSelected.size === 0}
+          className="flex items-center gap-1.5 text-xs text-accent disabled:opacity-50"
+        >
+          <Plus size={14} />
+          Tambah target carrier
+        </button>
+      </div>
+
       <div className="border-t border-border/60 pt-4 space-y-2">
         <h3 className="text-xs font-semibold text-muted uppercase tracking-wide">IP List (opsional)</h3>
         <textarea
@@ -538,11 +1050,6 @@ export function AdsterraCreateCampaignForm({
           </div>
         ) : null}
       </div>
-
-      <p className="text-xs text-muted">
-        Targeting browser, sistem operasi, region/kota, dan carrier belum ada di form ini — bisa diatur manual lewat website Adsterra
-        kalau perlu. Minta saya tambahin kalau mau dipakai dari sini juga.
-      </p>
 
       {error ? <div className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger whitespace-pre-wrap">{error}</div> : null}
 
