@@ -58,7 +58,7 @@ export function Sidebar({
     .map((item) => (item.label === "Alerts" ? { ...item, badge: unreadAlerts || undefined } : item));
 
   const logo = (
-    <div className="flex items-center gap-3">
+    <Link href="/dashboard" className="flex items-center gap-3" onClick={() => setOpen(false)}>
       <div className="h-[54px] w-[54px] rounded-xl bg-[#0c1222] border border-border flex items-center justify-center shrink-0">
         <svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true">
           <defs>
@@ -77,7 +77,7 @@ export function Sidebar({
         </div>
         <div className="text-[10px] text-muted">Advertising Command Center</div>
       </div>
-    </div>
+    </Link>
   );
 
   return (
@@ -91,9 +91,9 @@ export function Sidebar({
         >
           <Menu size={18} />
         </button>
-        <div className="font-semibold text-sm tracking-wide">
+        <Link href="/dashboard" className="font-semibold text-sm tracking-wide">
           AD<span className="text-accent">COMMAND</span>
-        </div>
+        </Link>
       </div>
 
       {open ? (
